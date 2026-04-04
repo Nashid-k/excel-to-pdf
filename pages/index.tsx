@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useState, type FormEvent, useRef } from "react";
+import { useState, type FormEvent, useRef, useEffect } from "react";
 import {
   Box,
   Button,
@@ -9,23 +9,19 @@ import {
   List,
   ListItem,
   Stack,
-  Table,
-  Tbody,
-  Td,
   Text,
-  Th,
-  Thead,
-  Tr,
   Badge,
   useToast,
-  Flex,
   Icon,
+  Center,
 } from "@chakra-ui/react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Motion components
+// Bubbly Motion components
 const MotionBox = motion(Box);
 const MotionStack = motion(Stack);
+const MotionHeading = motion(Heading);
+const MotionText = motion(Text);
 
 type WorkbookAnalysisItem = {
   fileName: string;
@@ -40,21 +36,56 @@ export default function Home() {
   const [files, setFiles] = useState<FileList | null>(null);
   const [pdfName, setPdfName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [analysis, setAnalysis] = useState<WorkbookAnalysisItem[]>([]);
+  const [loadingTextIndex, setLoadingTextIndex] = useState(0);
   const [isHovering, setIsHovering] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
+
+  const funnyLoadingTexts = [
+    "Mathaji is eating your Excel... 🥗",
+    "Mathaji is aligning Particulars... ✨",
+    "Mathaji is counting all the Money... 💰",
+    "Mathaji is consulting the AI spirits... 🔮",
+    "Mathaji is crafting your PDF masterpiece... 🎨",
+    "Mathaji is wrapping it up for you! 🎁"
+  ];
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (loading) {
+      interval = setInterval(() => {
+        setLoadingTextIndex((prev) => (prev + 1) % funnyLoadingTexts.length);
+      }, 2500);
+    } else {
+      setLoadingTextIndex(0);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!pdfName.trim()) {
-      toast({ title: "Please enter a PDF filename.", status: "warning", duration: 4000, isClosable: true });
+      toast({ 
+        title: "Oh no! 🙀", 
+        description: "Mathaji says you forgot a document name!", 
+        status: "warning", 
+        duration: 4000, 
+        isClosable: true,
+        variant: "subtle"
+      });
       return;
     }
 
     if (!files || files.length === 0) {
-      toast({ title: "Please select at least one Excel file.", status: "warning", duration: 4000, isClosable: true });
+      toast({ 
+        title: "Wait! 🛑", 
+        description: "Mathaji needs at least one Excel file to snack on!", 
+        status: "warning", 
+        duration: 4000, 
+        isClosable: true,
+        variant: "subtle"
+      });
       return;
     }
 
@@ -74,18 +105,6 @@ export default function Home() {
         throw new Error(message || "Conversion failed.");
       }
 
-      const rawAnalysis = response.headers.get("X-Workbook-Analysis");
-      if (rawAnalysis) {
-        try {
-          const parsed = JSON.parse(decodeURIComponent(rawAnalysis)) as WorkbookAnalysisItem[];
-          setAnalysis(parsed);
-        } catch {
-          setAnalysis([]);
-        }
-      } else {
-        setAnalysis([]);
-      }
-
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -97,18 +116,18 @@ export default function Home() {
       window.URL.revokeObjectURL(url);
       
       toast({
-        title: "PDF Downloaded",
-        description: "Your professional PDF is ready.",
+        title: "Yay! 🎊",
+        description: "Mathaji made your PDF perfectly! Enjoy! 🎈",
         status: "success",
         duration: 5000,
         isClosable: true,
-        variant: "subtle"
+        variant: "solid",
+        position: "top"
       });
     } catch (error) {
-      setAnalysis([]);
       toast({
-        title: "Error converting files.",
-        description: error instanceof Error ? error.message : "Unknown error.",
+        title: "Oopsie! 🍄",
+        description: error instanceof Error ? error.message : "Something went wrong with Mathaji.",
         status: "error",
         duration: 6000,
         isClosable: true,
@@ -118,29 +137,41 @@ export default function Home() {
     }
   };
 
-  // Background blobs
+  // Squishy floating background blobs
   const Background = () => (
-    <Box position="fixed" top={0} left={0} w="100%" h="100%" zIndex={-1} overflow="hidden" bg="gray.50">
+    <Box position="fixed" top={0} left={0} w="100%" h="100%" zIndex={-1} overflow="hidden" bg="orange.50">
       <MotionBox
         position="absolute"
-        top="-10%" left="-10%" w="50vw" h="50vw" borderRadius="full"
-        bg="purple.300" filter="blur(120px)" opacity={0.6}
-        animate={{ x: [0, 40, 0], y: [0, -30, 0] }}
+        top="-5%" left="-5%" w="60vw" h="60vw" 
+        bg="pink.200" filter="blur(100px)" opacity={0.7}
+        animate={{ 
+          x: [0, 60, 0], 
+          y: [0, -40, 0],
+          borderRadius: ["40% 60% 70% 30% / 40% 50% 60% 50%", "60% 40% 30% 70% / 50% 60% 40% 60%", "40% 60% 70% 30% / 40% 50% 60% 50%"]
+        }}
+        transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <MotionBox
+        position="absolute"
+        bottom="-10%" right="-5%" w="50vw" h="50vw" 
+        bg="blue.200" filter="blur(110px)" opacity={0.6}
+        animate={{ 
+          x: [0, -50, 0], 
+          y: [0, 40, 0],
+          borderRadius: ["60% 40% 30% 70% / 50% 60% 50% 40%", "40% 60% 70% 30% / 60% 40% 60% 50%", "60% 40% 30% 70% / 50% 60% 50% 40%"]
+        }}
+        transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <MotionBox
+        position="absolute"
+        top="45%" left="35%" w="35vw" h="35vw" 
+        bg="yellow.200" filter="blur(90px)" opacity={0.5}
+        animate={{ 
+          scale: [1, 1.3, 1],
+          opacity: [0.3, 0.6, 0.3],
+          borderRadius: ["50%", "45% 55% 65% 35% / 55% 45% 55% 45%", "50%"]
+        }}
         transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <MotionBox
-        position="absolute"
-        bottom="-10%" right="-10%" w="50vw" h="50vw" borderRadius="full"
-        bg="blue.300" filter="blur(120px)" opacity={0.5}
-        animate={{ x: [0, -40, 0], y: [0, 50, 0] }}
-        transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <MotionBox
-        position="absolute"
-        top="40%" left="30%" w="30vw" h="30vw" borderRadius="full"
-        bg="pink.200" filter="blur(90px)" opacity={0.4}
-        animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
-        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
       />
     </Box>
   );
@@ -148,68 +179,88 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Excel PDF - Premium Converter</title>
+        <title>Mathaji 1.0 - The Cute Converter 🎀</title>
       </Head>
       <Background />
       
-      <Container maxW="container.md" py={16}>
+      <Container maxW="container.md" py={12}>
         <MotionStack
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ 
+            type: "spring",
+            damping: 12,
+            stiffness: 100
+          }}
           spacing={8}
         >
           {/* Main Card */}
           <Box
-            bg="whiteAlpha.800"
-            backdropFilter="blur(20px)"
-            boxShadow="0 25px 50px -12px rgba(0, 0, 0, 0.15)"
-            borderRadius="3xl"
-            p={10}
-            border="1px solid"
-            borderColor="whiteAlpha.400"
+            bg="whiteAlpha.900"
+            backdropFilter="blur(15px)"
+            boxShadow="0 30px 60px -20px rgba(255, 105, 180, 0.3)"
+            borderRadius="50px"
+            p={{ base: 6, md: 12 }}
+            border="4px solid"
+            borderColor="pink.100"
+            position="relative"
+            overflow="hidden"
           >
+            {/* Cute Decorative Sparkles */}
+            <Box position="absolute" top="10px" right="20px" fontSize="2xl">✨</Box>
+            <Box position="absolute" bottom="20px" left="20px" fontSize="2xl">🌈</Box>
+
             <Box mb={8} textAlign="center">
-              <Heading
-                size="2xl"
+              <MotionHeading
+                size="3xl"
                 mb={4}
-                bgGradient="linear(to-r, blue.500, purple.600)"
+                bgGradient="linear(to-r, pink.400, purple.500, blue.400)"
                 bgClip="text"
                 fontWeight="900"
                 letterSpacing="tight"
+                animate={{ y: [0, -5, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
               >
-                Excel to PDF
-              </Heading>
-              <Text fontSize="lg" color="gray.600" fontWeight="medium">
-                Transform rough spreadsheets into elegant, business-ready documents with smart AI targeting.
-              </Text>
+                Mathaji 1.0
+              </MotionHeading>
+              <MotionText fontSize="xl" color="gray.600" fontWeight="bold">
+                The magical way to turn your messy numbers into beautiful PDFs! 🦄💎
+              </MotionText>
             </Box>
 
             <Box as="form" onSubmit={handleSubmit}>
-              <Stack spacing={6}>
+              <Stack spacing={8}>
                 <Box>
-                  <Text fontWeight="bold" mb={2} color="gray.700">Document Name</Text>
+                  <Text fontWeight="800" mb={3} color="purple.600" fontSize="lg" ml={2}>
+                    What shall we call this gem? 💎
+                  </Text>
                   <Input
                     type="text"
                     size="lg"
-                    placeholder="e.g. Q3 Financial Report"
+                    placeholder="e.g. My Super Cool Report 🚀"
                     value={pdfName}
                     onChange={(e) => setPdfName(e.target.value)}
-                    bg="white"
-                    borderRadius="xl"
-                    boxShadow="sm"
-                    border="1px"
-                    borderColor="gray.200"
-                    _focus={{ borderColor: "purple.400", boxShadow: "0 0 0 1px #9f7aea" }}
+                    bg="purple.50"
+                    borderRadius="25px"
+                    boxShadow="inner"
+                    border="2px solid"
+                    borderColor="purple.100"
+                    h="65px"
+                    _focus={{ borderColor: "pink.400", bg: "white", boxShadow: "0 0 15px pink" }}
+                    fontWeight="bold"
                   />
                 </Box>
 
                 <Box>
-                  <Text fontWeight="bold" mb={2} color="gray.700">Source Workbooks</Text>
+                  <Text fontWeight="800" mb={3} color="blue.600" fontSize="lg" ml={2}>
+                    Give Mathaji some Excel snackies! 🍪
+                  </Text>
                   <Box
                     as={motion.div}
-                    whileHover={{ scale: 1.01 }}
-                    whileTap={{ scale: 0.99 }}
+                    animate={{ 
+                      scale: isHovering ? 1.05 : 1,
+                      backgroundColor: isHovering ? "#F0F4FF" : "#FFFFFF" 
+                    }}
                     onClick={() => fileInputRef.current?.click()}
                     onDragOver={(e) => { e.preventDefault(); setIsHovering(true); }}
                     onDragLeave={() => setIsHovering(false)}
@@ -220,23 +271,31 @@ export default function Home() {
                         setFiles(e.dataTransfer.files);
                       }
                     }}
-                    p={8}
-                    border="2px dashed"
-                    borderColor={isHovering ? "purple.400" : "gray.300"}
-                    bg={isHovering ? "purple.50" : "whiteAlpha.900"}
-                    borderRadius="2xl"
+                    p={12}
+                    border="4px dashed"
+                    borderColor={isHovering ? "pink.400" : "blue.100"}
+                    borderRadius="40px"
                     textAlign="center"
                     cursor="pointer"
-                    transition="all 0.2s"
+                    transition="all 0.3s"
+                    boxShadow={isHovering ? "0 20px 40px -10px rgba(255, 105, 180, 0.4)" : "none"}
                   >
-                    <Icon viewBox="0 0 24 24" boxSize={10} color={isHovering ? "purple.500" : "gray.400"} mb={2}>
-                      <path fill="currentColor" d="M14 2H6C4.89 2 4 2.9 4 4V20C4 21.11 4.89 22 6 22H18C19.11 22 20 21.11 20 20V8L14 2M13 3.5L18.5 9H13V3.5M8 11.03C8 10.46 8.46 10 9.03 10H14.97C15.54 10 16 10.46 16 11.03V15.97C16 16.54 15.54 17 14.97 17H9.03C8.46 17 8 16.54 8 15.97V11.03M9 11V16H15V11H9Z" />
-                    </Icon>
-                    <Text fontWeight="bold" color="gray.700" fontSize="lg">
-                      {files && files.length > 0 ? `${files.length} file(s) selected` : "Drag & Drop or Click"}
+                    <MotionBox
+                      animate={{ 
+                        rotate: isHovering ? [0, 10, -10, 10, 0] : 0,
+                        scale: isHovering ? 1.2 : 1
+                      }}
+                      transition={{ duration: 0.5 }}
+                    >
+                      <Center mb={4}>
+                        <Box fontSize="5xl">📁</Box>
+                      </Center>
+                    </MotionBox>
+                    <Text fontWeight="900" color="blue.500" fontSize="xl">
+                      {files && files.length > 0 ? `OM NOM! ${files.length} FILE(S)!` : "FEED ME EXCEL!"}
                     </Text>
-                    <Text color="gray.500" fontSize="sm" mt={1}>
-                      Supported formats: .xls, .xlsx
+                    <Text color="blue.300" fontSize="md" mt={2} fontWeight="bold">
+                      (Drag them here or click!)
                     </Text>
                   </Box>
                   <Input
@@ -252,16 +311,25 @@ export default function Home() {
                 <AnimatePresence>
                   {files && files.length > 0 && (
                     <MotionBox
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
                     >
-                      <List spacing={2}>
+                      <List spacing={3}>
                         {Array.from(files).map((file, idx) => (
-                          <ListItem key={idx} p={3} bg="white" borderRadius="xl" boxShadow="sm" display="flex" alignItems="center">
-                            <Badge colorScheme="green" mr={3}>Excel</Badge>
-                            <Text flex="1" fontWeight="medium" isTruncated>{file.name}</Text>
-                            <Text fontSize="xs" color="gray.500" fontWeight="bold">{(file.size / 1024).toFixed(1)} KB</Text>
+                          <ListItem 
+                            key={idx} 
+                            p={4} 
+                            bg="pink.50" 
+                            borderRadius="20px" 
+                            display="flex" 
+                            alignItems="center"
+                            border="2px solid"
+                            borderColor="pink.100"
+                          >
+                            <Box fontSize="xl" mr={3}>📊</Box>
+                            <Text flex="1" fontWeight="800" color="pink.600" isTruncated>{file.name}</Text>
+                            <Badge colorScheme="pink" borderRadius="full" px={3}>{(file.size / 1024).toFixed(1)} KB</Badge>
                           </ListItem>
                         ))}
                       </List>
@@ -271,103 +339,54 @@ export default function Home() {
 
                 <Button
                   type="submit"
-                  size="lg"
-                  h="60px"
-                  borderRadius="xl"
-                  bgGradient="linear(to-r, blue.500, purple.600)"
+                  size="xl"
+                  h="80px"
+                  borderRadius="30px"
+                  bgGradient="linear(to-r, pink.400, purple.500, blue.400)"
                   color="white"
-                  fontWeight="bold"
-                  fontSize="lg"
-                  _hover={{ bgGradient: "linear(to-r, blue.600, purple.700)", transform: "translateY(-2px)", boxShadow: "xl" }}
-                  _active={{ transform: "translateY(0)" }}
+                  fontWeight="900"
+                  fontSize="2xl"
+                  boxShadow="0 15px 30px -10px rgba(159, 122, 234, 0.6)"
+                  _hover={{ 
+                    bgGradient: "linear(to-r, pink.500, purple.600, blue.500)", 
+                    transform: "scale(1.05) rotate(1deg)",
+                    boxShadow: "0 25px 50px -15px rgba(159, 122, 234, 0.8)" 
+                  }}
+                  _active={{ transform: "scale(0.95)" }}
                   isLoading={loading}
-                  loadingText="Structuring PDF..."
+                  loadingText={funnyLoadingTexts[loadingTextIndex]}
                   w="100%"
-                  boxShadow="lg"
-                  transition="all 0.2s"
+                  transition="all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)"
                 >
-                  Generate Professional PDF
+                  MAGIC GENERATE! ✨
                 </Button>
               </Stack>
             </Box>
           </Box>
 
-          {/* Analysis View */}
-          <AnimatePresence>
-            {analysis && analysis.length > 0 && (
-              <MotionBox
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                bg="whiteAlpha.800"
-                backdropFilter="blur(20px)"
-                borderRadius="3xl"
-                p={8}
-                boxShadow="0 10px 30px -10px rgba(0,0,0,0.1)"
-                border="1px solid"
-                borderColor="whiteAlpha.300"
-                overflow="hidden"
-              >
-                <Heading size="md" mb={6} color="gray.800" display="flex" alignItems="center">
-                  <Icon viewBox="0 0 24 24" mr={2} color="purple.500"><path fill="currentColor" d="M12 2C6.5 2 2 6.5 2 12C2 17.5 6.5 22 12 22C17.5 22 22 17.5 22 12C22 6.5 17.5 2 12 2M12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20M11 7H13V13H11V7M11 15H13V17H11V15Z"/></Icon>
-                  AI Processing Report
-                </Heading>
-                <Box overflowX="auto" borderRadius="xl" border="1px" borderColor="gray.100">
-                  <Table variant="simple" size="sm" bg="white">
-                    <Thead bg="gray.50">
-                      <Tr>
-                        <Th color="gray.500">File</Th>
-                        <Th color="gray.500">Strategy</Th>
-                        <Th color="gray.500">Selected</Th>
-                        <Th color="gray.500">Ignored</Th>
-                        <Th color="gray.500">Log</Th>
-                      </Tr>
-                    </Thead>
-                    <Tbody>
-                      {analysis.map((item, idx) => (
-                        <Tr key={idx} _hover={{ bg: "gray.50" }}>
-                          <Td fontWeight="medium">
-                            <Text isTruncated maxW="150px" title={item.fileName}>{item.fileName}</Text>
-                          </Td>
-                          <Td>
-                            <Badge colorScheme={item.mode === "groq" ? "purple" : "orange"} borderRadius="full" px={2}>
-                              {item.mode === "groq" ? "AI Vision" : "Fallback"}
-                            </Badge>
-                          </Td>
-                          <Td>
-                            <Flex wrap="wrap" gap={1}>
-                              {item.selectedSheets.length > 0 ? item.selectedSheets.map(s => (
-                                <Badge key={s} colorScheme="green" variant="subtle" borderRadius="md">{s}</Badge>
-                              )) : <Text color="gray.400">-</Text>}
-                            </Flex>
-                          </Td>
-                          <Td>
-                            <Flex wrap="wrap" gap={1}>
-                              {item.ignoredSheets.length > 0 ? item.ignoredSheets.map(s => (
-                                <Badge key={s} colorScheme="gray" variant="subtle" borderRadius="md">{s}</Badge>
-                              )) : <Text color="gray.400">-</Text>}
-                            </Flex>
-                          </Td>
-                          <Td>
-                            <Text fontSize="xs" color="gray.600" title={item.reason} isTruncated maxW="200px">
-                              {item.reason}
-                            </Text>
-                            {item.warnings.map((w, i) => (
-                              <Text key={i} fontSize="xs" color="orange.500" title={w} isTruncated maxW="200px">
-                                ⚠ {w}
-                              </Text>
-                            ))}
-                          </Td>
-                        </Tr>
-                      ))}
-                    </Tbody>
-                  </Table>
-                </Box>
-              </MotionBox>
-            )}
-          </AnimatePresence>
+          <Center mt={8}>
+            <MotionText
+              fontWeight="bold"
+              color="gray.400"
+              animate={{ opacity: [0.4, 0.8, 0.4] }}
+              transition={{ duration: 4, repeat: Infinity }}
+            >
+              Mathaji is watching over your documents... 🙏✨
+            </MotionText>
+          </Center>
+
         </MotionStack>
       </Container>
+
+      <style jsx global>{`
+        body {
+          cursor: url('https://raw.githubusercontent.com/half-done/cursors/master/cute-pink/pointer.cur'), auto;
+        }
+        ::selection {
+          background: #FFB6C1;
+          color: white;
+        }
+      `}</style>
     </>
   );
 }

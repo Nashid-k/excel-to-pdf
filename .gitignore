@@ -3,3 +3,10 @@ node_modules
 out
 .env
 .DS_Store
+*.pdf
+*.xlsx
+*.log
+*.err
+tmp_*
+tsconfig.tsbuildinfo
+package-lock.json (if you prefer, but usually next projects keep it)
