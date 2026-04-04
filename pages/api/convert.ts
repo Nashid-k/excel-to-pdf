@@ -3,6 +3,8 @@ import fs from "fs";
 import PDFDocument from "pdfkit";
 import * as xlsx from "xlsx";
 import type { File, Fields } from "formidable";
+import { formidable } from "formidable";
+import { Groq } from "groq-sdk";
 
 type PDFKitDocument = InstanceType<typeof PDFDocument>;
 type Workbook = xlsx.WorkBook;
@@ -49,10 +51,9 @@ export const config = {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const parseMultipart = (req: NextApiRequest): Promise<{ fields: Fields; files: File[] }> => {
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     try {
-      const formidableModule = await import("formidable");
-      const form = formidableModule.default({ multiples: true, keepExtensions: true, maxFileSize: 200 * 1024 * 1024 });
+      const form = formidable({ multiples: true, keepExtensions: true, maxFileSize: 200 * 1024 * 1024 });
       form.parse(req, (err, fields, files) => {
         if (err) return reject(err);
         const fileList = Object.values(files ?? {})
@@ -66,13 +67,18 @@ const parseMultipart = (req: NextApiRequest): Promise<{ fields: Fields; files: F
   });
 };
 
-let groqClientPromise: Promise<any | null> | null = null;
+let _groq: Groq | null = null;
 const getGroqClient = async () => {
   if (!process.env.GROQ_API_KEY) return null;
-  if (!groqClientPromise) {
-    groqClientPromise = import("groq-sdk").then((m) => new m.default({ apiKey: process.env.GROQ_API_KEY! }));
+  if (!_groq) {
+    try {
+      _groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
+    } catch (e) {
+      console.error("Failed to init Groq:", e);
+      return null;
+    }
   }
-  return groqClientPromise;
+  return _groq;
 };
 
 const getCellValue = (sheet: xlsx.WorkSheet, row: number, col: number): string => {
@@ -166,7 +172,7 @@ const numberToWords = (num: number): string => {
   const single = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
   const double = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
   const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
-  const formatT = (v: number) => v < 10 ? single[v] : v < 20 ? double[v - 10] : tens[Math.floor(v/10)] + (v%10 !== 0 ? " " + single[v%10] : "");
+  const formatT = (v: number) => v < 10 ? single[v] : v < 20 ? double[v - 10] : tens[Math.floor(v / 10)] + (v % 10 !== 0 ? " " + single[v % 10] : "");
   const formatHundred = (v: number) => {
     let res = "";
     if (v >= 100) { res += single[Math.floor(v / 100)] + " Hundred"; v %= 100; if (v > 0) res += " and "; }
@@ -177,9 +183,9 @@ const numberToWords = (num: number): string => {
   const decimalPart = Math.round((n - integerPart) * 100);
   let result = "";
   let temp = integerPart;
-  if (temp >= 10000000) { result += formatHundred(Math.floor(temp/10000000)) + " Crore "; temp %= 10000000; }
-  if (temp >= 100000) { result += formatHundred(Math.floor(temp/100000)) + " Lakh "; temp %= 100000; }
-  if (temp >= 1000) { result += formatHundred(Math.floor(temp/1000)) + " Thousand "; temp %= 1000; }
+  if (temp >= 10000000) { result += formatHundred(Math.floor(temp / 10000000)) + " Crore "; temp %= 10000000; }
+  if (temp >= 100000) { result += formatHundred(Math.floor(temp / 100000)) + " Lakh "; temp %= 100000; }
+  if (temp >= 1000) { result += formatHundred(Math.floor(temp / 1000)) + " Thousand "; temp %= 1000; }
   if (temp > 0) result += formatHundred(temp);
   result = result.trim() + " Only";
   if (decimalPart > 0) { result = result.replace(" Only", "") + " and " + formatT(decimalPart) + " Paise Only"; }
@@ -250,42 +256,12 @@ const analyzeWorkbookWithGroq = async (fileName: string, summaries: SheetSummary
   };
 };
 
-const verifyAmountsWithAI = async (sheetName: string, rows: string[][]): Promise<{ total: number; words: string }> => {
-  const groq = await getGroqClient();
-  if (!groq) return { total: 0, words: "" };
-  
-  const sample = rows.filter(r => !isRowEmpty(r)).slice(-15); // Focus on the bottom for summary/total
-  const prompt = `Analyze these Excel rows for a sheet named "${sheetName}". Identify the FINAL TOTAL AMOUNT and the corresponding AMOUNT IN WORDS. 
-  Return ONLY a JSON object with "total" (number, no commas) and "words" (string). 
-  Rows: ${JSON.stringify(sample)}`;
-  
-  try {
-    const response = await groq.chat.completions.create({
-      model: "llama3-8b-8192", temperature: 0.1,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const parsed = extractJsonObject(response.choices[0]?.message?.content || "{}");
-    return {
-      total: Number(parsed.total) || 0,
-      words: String(parsed.words || "").trim()
-    };
-  } catch (err) {
-    console.error("AI amount verification failed:", err);
-    return { total: 0, words: "" };
-  }
-};
 
 const analyzeWorkbook = async (fileName: string, workbook: Workbook) => {
   const summaries = workbook.SheetNames.map((n) => summarizeSheet(workbook, n, workbook.Sheets[n]));
-  try { 
+  try {
     const analysis = await analyzeWorkbookWithGroq(fileName, summaries);
-    // Add amount verification for selected sheets
-    analysis.verifiedAmounts = {};
-    for (const sheetName of analysis.selectedSheets) {
-      const rows = getSheetRows(workbook.Sheets[sheetName]);
-      analysis.verifiedAmounts[sheetName] = await verifyAmountsWithAI(sheetName, rows);
-    }
-    return { summaries, analysis }; 
+    return { summaries, analysis };
   }
   catch (e) { return { summaries, analysis: fallbackAnalyzeWorkbook(fileName, workbook, summaries) }; }
 };
@@ -299,10 +275,16 @@ const getRenderableSheetNames = (workbook: Workbook, summaries: SheetSummary[], 
     .sort((a, b) => (a.date && b.date ? a.date.getTime() - b.date.getTime() : a.date ? -1 : b.date ? 1 : 0))
     .map((s) => s.name);
 
-const isTableHeaderRow = (row: string[]) => /particulars|description|item\b|amount|rate|qty|quantity|credit|debit|sl\.?\s*no/i.test(row.join(" "));
-const isMetaRow = (row: string[]) => /^(no|date|through|ca\.?\s*no|mode|party|a\/c|bank|ifsc|branch|cheque)[\s]*[:\-]/i.test(row.filter(v => v.trim()).join(" "));
-const isTotalRow = (row: string[]) => row.some((v) => /^\s*total\s*$/i.test(v.trim()) || /grand\s*total/i.test(v));
-const isAmountWordsRow = (row: string[]) => { const j = row.filter(v => v.trim()).join(" "); return /amount\s*\(?in\s*words\)?/i.test(j) || /^(INR|Rs)[\.\s]/i.test(j.trim()); };
+const isTableHeaderRow = (row: string[]) => /particulars|description|item\b|amount|rate|qty|quantity|credit|debit|sl\.?\s*no|details\s*of\s*payment/i.test(row.join(" "));
+const isMetaRow = (row: string[]) => /^(no|date|through|ca\.?\s*no|mode|party|a\/c|bank|ifsc|branch|cheque|utr)[\s]*[:\-]/i.test(row.filter(v => v.trim()).join(" "));
+const isTotalRow = (row: string[]) => {
+  const joined = row.join(" ").toLowerCase();
+  return (joined.includes("total") || joined.includes("grand") || /^\s*net\s*total/i.test(joined) || joined.includes("balance") || joined.includes("payable"));
+};
+const isAmountWordsRow = (row: string[]) => {
+  const j = row.filter(v => v.trim()).join(" ").toLowerCase();
+  return (j.includes("amount in words") || j.includes("rupees") || (j.includes("only") && j.length > 15));
+};
 const isSignatureRow = (row: string[]) => /prepared\s*by|checked\s*by|authorized|signature|receiver|approved/i.test(row.join(" "));
 
 const classifyRows = (rows: string[][], merges: any[]): ClassifiedRow[] => {
@@ -319,8 +301,12 @@ const classifyRows = (rows: string[][], merges: any[]): ClassifiedRow[] => {
       if (r <= 4) classified.push({ section: "HEADER", rowIndex: r, cells: row });
       else classified.push({ section: "META", rowIndex: r, cells: row });
     } else {
-      if (isTotalRow(row)) { classified.push({ section: "SUMMARY", rowIndex: r, cells: row }); continue; }
-      if (isAmountWordsRow(row)) { tableEnded = true; classified.push({ section: "SUMMARY", rowIndex: r, cells: row }); continue; }
+      const it = isTotalRow(row), iaw = isAmountWordsRow(row);
+      if (it || iaw) {
+        tableEnded = true;
+        classified.push({ section: "SUMMARY", rowIndex: r, cells: row });
+        continue;
+      }
       classified.push({ section: tableEnded ? "SUMMARY" : "TABLE_BODY", rowIndex: r, cells: row });
     }
   }
@@ -337,13 +323,14 @@ class BaseRenderer {
   protected doc: PDFKitDocument; protected y = TEXT_X; protected design: any; protected dyn: Record<string, number> = {};
   constructor(doc: PDFKitDocument, design?: any) {
     this.doc = doc;
-    this.design = design || { headers: ["Particulars", "Amount", "Remarks"], columnRatios: [0.6, 0.2, 0.2], typography: { baseFontSize: 9, headingFontSize: 10, titleFontSize: 14, lineSpacing: 1.2 } };
+    this.design = design || { headers: ["Particulars", "Amount", "Remarks"], columnRatios: [0.6, 0.2, 0.2], typography: { baseFontSize: 10, headingFontSize: 11, titleFontSize: 16, lineSpacing: 1.4 } };
     const t = this.design.typography, cr = this.design.columnRatios;
     this.dyn.COL_P = Math.round(TEXT_W * cr[0]); this.dyn.COL_A = Math.round(TEXT_W * cr[1]); this.dyn.COL_R = TEXT_W - this.dyn.COL_P - this.dyn.COL_A;
     this.dyn.X_P = TEXT_X; this.dyn.X_A = this.dyn.X_P + this.dyn.COL_P; this.dyn.X_R = this.dyn.X_A + this.dyn.COL_A; this.dyn.X_END = this.dyn.X_P + TEXT_W;
     this.dyn.SZ_CO = t.titleFontSize + 4; this.dyn.SZ_AD = t.baseFontSize + 1; this.dyn.SZ_TI = t.titleFontSize; this.dyn.SZ_ME = t.baseFontSize + 1;
     this.dyn.SZ_TH = t.headingFontSize; this.dyn.SZ_TB = t.baseFontSize; this.dyn.SZ_TO = t.headingFontSize; this.dyn.SZ_WD = t.baseFontSize;
-    this.dyn.HEADER_ROW_H = t.headingFontSize + 8; this.dyn.SUB_LABEL_H = t.baseFontSize + 5; this.dyn.TOTAL_ROW_H = t.headingFontSize + 6;
+    this.dyn.HEADER_ROW_H = t.headingFontSize + 12; this.dyn.SUB_LABEL_H = t.baseFontSize + 8; this.dyn.TOTAL_ROW_H = t.headingFontSize + 10;
+    this.dyn.SZ_FT = t.baseFontSize - 2;
   }
   protected renderPageDecorations(companyName: string, supportLines: string[], docTitle: string) {
     this.doc.save().lineWidth(LW_OUTER).strokeColor(C_BORDER).rect(OUTER_M, OUTER_M, PW - OUTER_M * 2, PH - OUTER_M * 2).stroke().restore();
@@ -355,10 +342,10 @@ class BaseRenderer {
   protected vl(x: number, y1: number, y2: number, lw = LW_TABLE) { this.doc.save().lineWidth(lw).strokeColor(C_BORDER).moveTo(x, y1).lineTo(x, y2).stroke().restore(); }
   protected box(x: number, y: number, w: number, h: number, lw = LW_TABLE) { this.doc.save().lineWidth(lw).strokeColor(C_BORDER).rect(x, y, w, h).stroke().restore(); }
   protected txt(s: string, x: number, y: number, w: number, font = FR, size = this.dyn.SZ_TB, align: any = "left", lineBreak = false, color = C_TEXT) {
-    this.doc.font(font).fontSize(size).fillColor(color).text(s, x, y, { width: w, align, lineBreak });
+    this.doc.font(font).fontSize(size).fillColor(color).text(s, x, y, { width: w, align, lineBreak, lineGap: 3 });
   }
   protected textH(s: string, w: number, font = FR, size = this.dyn.SZ_TB): number {
-    this.doc.font(font).fontSize(size); return toFiniteNumber(this.doc.heightOfString(s, { width: w }), size);
+    this.doc.font(font).fontSize(size); return toFiniteNumber(this.doc.heightOfString(s, { width: w, lineGap: 3 }), size);
   }
 }
 
@@ -377,7 +364,7 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
     for (const r of rows) { const j = r.cells.filter(c => c.trim()).join("  "); for (const p of patterns) { const m = j.match(p); if (m) return m[1].trim(); } }
     return "";
   }
-  private fmtDate(v: string) { const p = tryParseDate(v); if (!p) return v.trim(); return `${String(p.getDate()).padStart(2,"0")}-${String(p.getMonth()+1).padStart(2,"0")}-${p.getFullYear()}`; }
+  private fmtDate(v: string) { const p = tryParseDate(v); if (!p) return v.trim(); return `${String(p.getDate()).padStart(2, "0")}-${String(p.getMonth() + 1).padStart(2, "0")}-${p.getFullYear()}`; }
   private parseVoucherMeta(rows: ClassifiedRow[]) {
     const text = rows.map(r => r.cells.join(" ")).join(" | ");
     let vDate = "", vNo = "";
@@ -390,15 +377,28 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
     const extra = rows.map(r => r.cells.map(c => c.trim()).filter(Boolean).join("  ")).filter(j => j && !/^(no\.?|vouch|date|paid|recei|party)/i.test(j));
     return { vNo, vDate, label, party, extra };
   }
-  private amountColIdx(headerRow: ClassifiedRow | undefined, bodyRows: ClassifiedRow[]): number {
-    if (headerRow) { const idx = headerRow.cells.findIndex(c => /amount|debit|credit|dr\b|cr\b|total/i.test(c)); if (idx >= 0) return idx; }
-    let bestIdx = -1, bestScore = 0;
-    const maxCols = Math.max(...bodyRows.slice(0, 25).map(r => r.cells.length), 0);
+  private amountColIdx(headerRow: ClassifiedRow | undefined, bodyRows: ClassifiedRow[], targetTotal?: number): number {
+    if (headerRow) { const idx = headerRow.cells.findIndex(c => /amount|debit|dr|cr|credit/i.test(c.toLowerCase())); if (idx >= 0) return idx; }
+    let bestIdx = -1, minError = 999999;
+    const maxCols = Math.max(...bodyRows.slice(0, 30).map(r => r.cells.length), 0);
+
     for (let c = 0; c < maxCols; c++) {
-      const score = bodyRows.slice(0, 25).filter(r => /^-?\d{1,3}(,\d{3})*(\.\d{1,2})?$/.test((r.cells[c] || "").trim()) || /^-?\d+(\.\d{1,2})?$/.test((r.cells[c] || "").trim())).length;
-      if (score > bestScore) { bestScore = score; bestIdx = c; }
+      let colSum = 0, numericCount = 0;
+      for (const r of bodyRows.slice(0, 30)) {
+        const val = parseFloat((r.cells[c] || "").replace(/,/g, "")) || 0;
+        if (val !== 0) { colSum += val; numericCount++; }
+      }
+      if (numericCount > 0) {
+        if (targetTotal !== undefined) {
+          const err = Math.abs(colSum - targetTotal);
+          if (err < 0.1 && err < minError) { minError = err; bestIdx = c; }
+        } else if (numericCount > (bestIdx === -1 ? 0 : 5)) {
+          // Fallback: choose the first column with significant numbers
+          if (bestIdx === -1) bestIdx = c;
+        }
+      }
     }
-    return bestIdx;
+    return bestIdx >= 0 ? bestIdx : (maxCols > 2 ? 3 : maxCols - 1);
   }
   private normalizeAmount(value: string): string {
     const num = value.replace(/[^\d.\-]/g, "").trim();
@@ -412,10 +412,9 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
     const m = s.match(/-?[\d,]+(?:\.\d+)?/);
     return m ? m[0] : s;
   }
-  private verifiedAmount?: { total: number; words: string };
 
-  public render(sheetName: string, rows: string[][], merges: any[], verified?: { total: number; words: string }) {
-    this.verifiedAmount = verified;
+  public render(sheetName: string, rows: string[][], merges: any[]) {
+    const verified = undefined;
     const classified = classifyRows(rows, merges);
     const thIdx = classified.findIndex(r => r.section === "TABLE_HEADER");
     const hRows = classified.filter(r => r.section === "HEADER"), mRows = classified.filter(r => r.section === "META" && (thIdx < 0 || r.rowIndex < classified[thIdx].rowIndex));
@@ -424,7 +423,7 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
     this.renderPageDecorations(companyName, supportLines, documentTitle);
     this.renderMeta(mRows);
     this.renderTable(thRow, bRows, sRows, companyName, supportLines, documentTitle);
-    this.renderAmountWords();
+    this.renderAmountWords(sRows);
     this.renderFooter(fRows);
   }
   private renderMeta(rows: ClassifiedRow[]) {
@@ -448,36 +447,108 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
     this.txt("On Account of :", this.dyn.X_P + 4, this.y + 3, this.dyn.COL_P - 8, FB, 8); this.y += this.dyn.SUB_LABEL_H; this.hr(this.y, LW_TABLE);
     let bodyStartY = this.y, total = 0, amtIdx = this.amountColIdx(th, br);
     let rowIndex = 1;
-    for (const r of br.filter(x => !isRowEmpty(x.cells))) {
-      const cells = r.cells.map(c => c.trim()), raw = amtIdx >= 0 ? (cells[amtIdx] || "") : "";
-      const val = this.extractAmountValue(raw), amtTxt = this.normalizeAmount(val);
-      const parsed = parseFloat(val.replace(/,/g,"")); if(!isNaN(parsed)) total += parsed;
-      
-      // Prepend S.No. to the description if it's the first column
-      const descBase = cells.filter((_, i) => i !== amtIdx).join("  ").trim();
-      const desc = `${rowIndex}. ${descBase}`;
-      rowIndex++;
 
-      const rh = Math.max(16, this.textH(desc, this.dyn.COL_P - 8) + 6);
+    const processedRows: { desc: string; amtTxt: string; val: number; isHeader: boolean; isRounding: boolean; isFieldLabel: boolean; padding: number }[] = [];
+
+    for (const r of br.filter(x => !isRowEmpty(x.cells))) {
+      const cells = r.cells.map(c => c.trim());
+      let descBase = cells.filter((_, i) => i !== amtIdx).join("  ").trim();
+      let rawAmt = amtIdx >= 0 ? (cells[amtIdx] || "") : "";
+
+      if (descBase) {
+        const amtRegex = /\b-?(\d{1,3}(?:,\d{3})+|\d{4,}|\d+)(?:\.\d{2,})?\b/g;
+        const matches = [...descBase.matchAll(amtRegex)];
+        const alreadyHasAmount = rawAmt && !isNaN(parseFloat(rawAmt.replace(/,/g, "")));
+
+        if (!alreadyHasAmount && matches.length > 0) {
+          // Fallback: Use the last number found in the description if the amount column is empty
+          rawAmt = matches[matches.length - 1][0];
+          descBase = descBase.replace(rawAmt, "").replace(/\s\s+/g, " ").trim();
+        }
+      }
+
+      const val = parseFloat(this.extractAmountValue(rawAmt).replace(/,/g, "")) || 0;
+      const isMajorHeader = /details\s*of\s*payment|party(?:'?s?)?\s*bank\s*details|bank\s*details/i.test(descBase);
+      const isFieldLabel = /\b(?:a\/c\.?\s*(?:name|no\.?)|ifsc|utr|bank\s*name|branch|name\s*of\s*the\s*bank)\b/i.test(descBase);
+      const isRounding = /rounding|round\s*off/i.test(descBase);
+      const isHeader = isMajorHeader || isFieldLabel;
+      let desc = descBase;
+      if (!isHeader && descBase) { desc = `${rowIndex}. ${descBase}`; rowIndex++; } else if (isMajorHeader) { desc = descBase.toUpperCase(); }
+      const padding = isMajorHeader ? 16 : isFieldLabel ? 12 : 10;
+      processedRows.push({ desc, amtTxt: this.normalizeAmount(String(val)), val, isHeader, isRounding, isFieldLabel, padding });
+      total += val;
+    }
+
+    // DO NOT recalculate total here. Instead, find the TOTAL row from Summary Rows (sr)
+    let excelTotalValue = 0;
+    let excelTotalText = "0";
+
+    const totalRow = sr.find(r => isTotalRow(r.cells));
+    if (totalRow) {
+      // Find the first cell that looks like a number in the total row
+      const nums = totalRow.cells.map(c => this.extractAmountValue(c).replace(/,/g, "")).map(v => parseFloat(v)).filter(v => !isNaN(v));
+      if (nums.length > 0) {
+        excelTotalValue = Math.max(...nums);
+        excelTotalText = excelTotalValue.toLocaleString("en-IN", { minimumFractionDigits: excelTotalValue % 1 !== 0 ? 2 : 0, maximumFractionDigits: 2 });
+      } else {
+        // Fallback: search the whole row text
+        const j = totalRow.cells.join(" ");
+        const m = j.match(/(\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?/);
+        if (m) {
+          excelTotalValue = parseFloat(m[0].replace(/,/g, ""));
+          excelTotalText = m[0];
+        }
+      }
+    }
+
+    for (const r of processedRows) {
+      const rh = Math.max(16, this.textH(r.desc, this.dyn.COL_P - 8) + r.padding);
       if (this.y + rh > PH - OUTER_M - 40) {
         if (this.y - bodyStartY < TABLE_BODY_MIN_H) { const p = TABLE_BODY_MIN_H - (this.y - bodyStartY); this.vl(this.dyn.X_P, this.y, this.y + p); this.vl(this.dyn.X_A, this.y, this.y + p); this.vl(this.dyn.X_R, this.y, this.y + p); this.vl(this.dyn.X_END, this.y, this.y + p); this.y += p; }
         this.hr(this.y, LW_TABLE); this.doc.addPage({ size: [PW, PH], margin: OUTER_M }); this.renderPageDecorations(cn, sl, dt); this.y += this.dyn.HEADER_ROW_H + this.dyn.SUB_LABEL_H + 20; bodyStartY = this.y;
       }
       this.vl(this.dyn.X_P, this.y, this.y + rh); this.vl(this.dyn.X_A, this.y, this.y + rh); this.vl(this.dyn.X_R, this.y, this.y + rh); this.vl(this.dyn.X_END, this.y, this.y + rh);
-      if (desc) this.txt(desc, this.dyn.X_P + 4, this.y + 3, this.dyn.COL_P - 8, FR, this.dyn.SZ_TB, "left", true);
-      if (amtTxt) this.txt(amtTxt, this.dyn.X_A + 2, this.y + 3, this.dyn.COL_A - 6, FR, this.dyn.SZ_TB, "right");
+
+      if (r.desc) {
+        const indent = r.isFieldLabel ? 16 : 4;
+        const font = r.isHeader ? FB : FR;
+        const size = (r.isHeader && !r.isFieldLabel) ? this.dyn.SZ_TH : this.dyn.SZ_TB;
+
+        this.txt(r.desc, this.dyn.X_P + indent, this.y + (r.padding / 2), this.dyn.COL_P - (indent + 4), font, size, "left", true);
+
+        // Underline for major headers (BOLD ALL CAPS)
+        if (r.isHeader && !r.isFieldLabel) {
+          const tw = this.doc.widthOfString(r.desc);
+          this.doc.save().lineWidth(0.5).strokeColor(C_BORDER).moveTo(this.dyn.X_P + indent, this.y + (r.padding / 2) + size + 2).lineTo(this.dyn.X_P + indent + Math.min(tw, this.dyn.COL_P - 20), this.y + (r.padding / 2) + size + 2).stroke().restore();
+        }
+      }
+      if (r.val !== 0 || r.isRounding) {
+        this.txt(r.amtTxt, this.dyn.X_A + 2, this.y + (r.padding / 2), this.dyn.COL_A - 6, r.isHeader ? FB : FR, this.dyn.SZ_TB, "right");
+      }
       this.y += rh;
     }
     const used = this.y - bodyStartY; if (used < TABLE_BODY_MIN_H) { const p = TABLE_BODY_MIN_H - used; this.vl(this.dyn.X_P, this.y, this.y + p); this.vl(this.dyn.X_A, this.y, this.y + p); this.vl(this.dyn.X_R, this.y, this.y + p); this.vl(this.dyn.X_END, this.y, this.y + p); this.y += p; }
-    this.numericTotal = total; this.hr(this.y, LW_OUTER); this.box(this.dyn.X_P, this.y, this.dyn.COL_P, this.dyn.TOTAL_ROW_H, LW_TABLE); this.box(this.dyn.X_A, this.y, this.dyn.COL_A, this.dyn.TOTAL_ROW_H, LW_TABLE); this.box(this.dyn.X_R, this.y, this.dyn.COL_R, this.dyn.TOTAL_ROW_H, LW_TABLE);
+    this.numericTotal = excelTotalValue;
+    this.hr(this.y, LW_OUTER); this.box(this.dyn.X_P, this.y, this.dyn.COL_P, this.dyn.TOTAL_ROW_H, LW_TABLE); this.box(this.dyn.X_A, this.y, this.dyn.COL_A, this.dyn.TOTAL_ROW_H, LW_TABLE); this.box(this.dyn.X_R, this.y, this.dyn.COL_R, this.dyn.TOTAL_ROW_H, LW_TABLE);
     this.txt("Total", this.dyn.X_P + 2, this.y + 4, this.dyn.COL_P - 4, FB, this.dyn.SZ_TO, "center");
-    const finalTotal = (this.verifiedAmount?.total && this.verifiedAmount.total > 0) ? this.verifiedAmount.total : total;
-    this.txt(finalTotal.toLocaleString("en-IN", { minimumFractionDigits: finalTotal % 1 !== 0 ? 2 : 0, maximumFractionDigits: 2 }), this.dyn.X_A + 2, this.y + 4, this.dyn.COL_A - 6, FB, this.dyn.SZ_TO, "right");
+    this.txt(excelTotalText, this.dyn.X_A + 2, this.y + 4, this.dyn.COL_A - 6, FB, this.dyn.SZ_TO, "right");
     this.y += this.dyn.TOTAL_ROW_H;
   }
-  private renderAmountWords() {
-    const words = (this.verifiedAmount?.words && this.verifiedAmount.words.length > 5) ? this.verifiedAmount.words : numberToWords(this.numericTotal);
-    const text = "Amount in words: " + words;
+  private renderAmountWords(sr: ClassifiedRow[]) {
+    // Find the row with amount in words directly from Excel
+    const wordsRow = sr.find(r => isAmountWordsRow(r.cells));
+    let cleanWords = "";
+    if (wordsRow) {
+      cleanWords = wordsRow.cells.join(" ").replace(/amount\s*\(?in\s*words\)?\s*[:\-]?\s*/i, "").trim();
+    } else {
+      // Fallback only if absolutely missing
+      cleanWords = numberToWords(this.numericTotal);
+    }
+
+    if (!cleanWords.toLowerCase().startsWith("rupees")) {
+      cleanWords = cleanWords.charAt(0).toUpperCase() + cleanWords.slice(1);
+    }
+    const text = "Amount in words: " + cleanWords;
     const bh = this.textH(text, TEXT_W - 8, FB, this.dyn.SZ_WD) + 8;
     this.box(this.dyn.X_P, this.y, TEXT_W, bh);
     this.txt(text, this.dyn.X_P + 4, this.y + 4, TEXT_W - 8, FB, this.dyn.SZ_WD, "left", true);
@@ -528,7 +599,7 @@ const renderSheet = (doc: PDFKitDocument, _fn: string, sn: string, s: xlsx.WorkS
   rows = sorted;
   doc.addPage({ size: [PW, PH], margin: OUTER_M, layout: "portrait" });
   const renderer: Renderer = isVoucher ? new VoucherRenderer(doc, a.sheetDesigns?.[sn]) : new ReportRenderer(doc, a.sheetDesigns?.[sn]);
-  renderer.render(sn, rows, s["!merges"] || [], a.verifiedAmounts?.[sn]);
+  renderer.render(sn, rows, s["!merges"] || []);
 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -556,5 +627,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.setHeader("X-Workbook-Analysis", encodeHeaderValue(JSON.stringify(meta.map(m => ({ fileName: m.fileName, mode: m.analysis.mode, selectedSheets: m.analysis.selectedSheets, ignoredSheets: m.analysis.ignoredSheets, reason: m.analysis.reason, warnings: m.analysis.warnings })))));
     res.status(200).send(buf);
   } catch (e) { console.error(e); if (!res.writableEnded) res.status(500).send(`Error: ${e instanceof Error ? e.message : e}`); }
-  finally { list.forEach(f => { if (fs.existsSync(f.filepath)) try { fs.unlinkSync(f.filepath); } catch {} }); }
+  finally { list.forEach(f => { if (fs.existsSync(f.filepath)) try { fs.unlinkSync(f.filepath); } catch { } }); }
 }
