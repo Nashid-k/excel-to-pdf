@@ -1,6 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import fs from "fs";
-import path from "path";
 import PDFDocument from "pdfkit";
 import * as xlsx from "xlsx";
 import type { File, Fields } from "formidable";
@@ -349,8 +348,8 @@ const X_R = X_A + COL_A;
 const X_END = X_P + TEXT_W;
 
 // ── Fonts ────────────────────────────────────────────────────────────────
-const FR = "Inter-Regular";
-const FB = "Inter-Bold";
+const FR = "Helvetica";
+const FB = "Helvetica-Bold";
 
 // ── Colors ───────────────────────────────────────────────────────────────
 const C_TEXT   = "#111827";  // Charcoal Gray
@@ -391,15 +390,6 @@ class BaseRenderer {
 
   constructor(doc: PDFKitDocument) {
     this.doc = doc;
-    // Register fonts automatically in constructors
-    try {
-      const regularPath = path.join(process.cwd(), "fonts", "Inter-Regular.ttf");
-      const boldPath    = path.join(process.cwd(), "fonts", "Inter-Bold.ttf");
-      if (fs.existsSync(regularPath)) this.doc.registerFont(FR, regularPath);
-      if (fs.existsSync(boldPath))    this.doc.registerFont(FB, boldPath);
-    } catch (e) {
-      console.warn("Failed to load Inter fonts, falling back to Helvetica:", e);
-    }
   }
 
   protected outerBorder() {
