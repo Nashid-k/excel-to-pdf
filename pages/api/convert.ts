@@ -407,7 +407,11 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
     const hasDec = parsed % 1 !== 0;
     return parsed.toLocaleString("en-IN", { minimumFractionDigits: hasDec ? 2 : 0, maximumFractionDigits: 2 });
   }
-  private extractAmountValue(s: string) { const m = s.match(/(-?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+\.?\d*)/); return m ? m[0] : s; }
+  private extractAmountValue(s: string) {
+    // Correctly captures numbers like 86248.00 or 1,86,248.00 by selecting the longest numeric segment
+    const m = s.match(/-?[\d,]+(?:\.\d+)?/);
+    return m ? m[0] : s;
+  }
   private verifiedAmount?: { total: number; words: string };
 
   public render(sheetName: string, rows: string[][], merges: any[], verified?: { total: number; words: string }) {
