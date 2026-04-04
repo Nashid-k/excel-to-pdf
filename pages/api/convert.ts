@@ -374,49 +374,46 @@ const TOTAL_ROW_H     = 16;
 const SIG_ROW_H       = 50;
 const FOOTER_ROW_H    = 20;
 
-class VoucherRenderer {
-  private doc: PDFKitDocument;
-  private y = TEXT_X;
+interface Renderer {
+  render(sheetName: string, rows: string[][], merges: any[]): void;
+}
+
+class BaseRenderer {
+  protected doc: PDFKitDocument;
+  protected y = TEXT_X;
 
   constructor(doc: PDFKitDocument) {
     this.doc = doc;
   }
 
-  // ── Primitives ───────────────────────────────────────────────────────
-
-  /** Outer page border */
-  private outerBorder() {
+  protected outerBorder() {
     this.doc.save()
       .lineWidth(LW_OUTER).strokeColor("#000")
       .rect(OUTER_M, OUTER_M, PW - OUTER_M * 2, PH - OUTER_M * 2)
       .stroke().restore();
   }
 
-  /** Horizontal rule across full content width */
-  private hr(y: number, lw = LW_TABLE) {
+  protected hr(y: number, lw = LW_TABLE, xStart = X_P, xEnd = X_END) {
     this.doc.save()
       .lineWidth(lw).strokeColor("#000")
-      .moveTo(X_P, y).lineTo(X_END, y)
+      .moveTo(xStart, y).lineTo(xEnd, y)
       .stroke().restore();
   }
 
-  /** Vertical line segment */
-  private vl(x: number, y1: number, y2: number, lw = LW_TABLE) {
+  protected vl(x: number, y1: number, y2: number, lw = LW_TABLE) {
     this.doc.save()
       .lineWidth(lw).strokeColor("#000")
       .moveTo(x, y1).lineTo(x, y2)
       .stroke().restore();
   }
 
-  /** Bordered rectangle */
-  private box(x: number, y: number, w: number, h: number, lw = LW_TABLE) {
+  protected box(x: number, y: number, w: number, h: number, lw = LW_TABLE) {
     this.doc.save()
       .lineWidth(lw).strokeColor("#000")
       .rect(x, y, w, h).stroke().restore();
   }
 
-  /** Render text (no lineBreak by default for single lines) */
-  private txt(
+  protected txt(
     s: string, x: number, y: number, w: number,
     font = FR, size = SZ_TB,
     align: "left" | "center" | "right" = "left",
@@ -426,11 +423,19 @@ class VoucherRenderer {
       .text(s, x, y, { width: w, align, lineBreak });
   }
 
-  // ── Text height helper ───────────────────────────────────────────────
-  private textH(s: string, w: number, font = FR, size = SZ_TB): number {
+  protected textH(s: string, w: number, font = FR, size = SZ_TB): number {
     this.doc.font(font).fontSize(size);
     return toFiniteNumber(this.doc.heightOfString(s, { width: w }), size);
   }
+}
+
+class VoucherRenderer extends BaseRenderer implements Renderer {
+  constructor(doc: PDFKitDocument) {
+    super(doc);
+  }
+
+  // ── Primitives ───────────────────────────────────────────────────────
+
 
   // ── Parse header rows → companyName, supportLines, documentTitle ─────
   private parseHeader(rows: ClassifiedRow[], sheetName: string) {
@@ -885,6 +890,80 @@ class VoucherRenderer {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// REPORT RENDERER
+// Handles generic data grids with dynamic column widths
+// ═══════════════════════════════════════════════════════════════════════════
+
+class ReportRenderer extends BaseRenderer implements Renderer {
+  constructor(doc: PDFKitDocument) {
+    super(doc);
+  }
+
+  public render(sheetName: string, rows: string[][], _merges: any[]) {
+    this.y = TEXT_X;
+    this.outerBorder();
+
+    // ── 1. HEADER ──────────────────────────────────────────────────────
+    this.y = TEXT_X + 8;
+    this.txt(sheetName, X_P, this.y, TEXT_W, FB, 16, "center");
+    this.y += 25;
+    this.hr(this.y, 0.8);
+    this.y += 15;
+
+    if (rows.length === 0) return;
+
+    // ── 2. COLUMN WIDTHS ────────────────────────────────────────────────
+    const colCount = getColumnCount(rows);
+    const colW = TEXT_W / colCount;
+
+    // ── 3. TABLE ────────────────────────────────────────────────────────
+    const [header, ...body] = rows;
+
+    // Render Headers
+    this.doc.save().rect(X_P, this.y, TEXT_W, HEADER_ROW_H).fill("#f5f5f5");
+    this.box(X_P, this.y, TEXT_W, HEADER_ROW_H, LW_OUTER);
+    
+    header.forEach((val, i) => {
+      const x = X_P + i * colW;
+      this.vl(x, this.y, this.y + HEADER_ROW_H);
+      this.txt(val, x + 2, this.y + 5, colW - 4, FB, 8, "center");
+    });
+    this.vl(X_END, this.y, this.y + HEADER_ROW_H);
+    this.y += HEADER_ROW_H;
+
+    // Render Body
+    body.forEach((row, rowIndex) => {
+      // Pagination check (keep safe margin)
+      if (this.y > PH - OUTER_M - 50) {
+        this.doc.addPage({ size: [PW, PH], margin: OUTER_M });
+        this.y = OUTER_M + 20;
+        this.outerBorder();
+        this.hr(this.y, 0.8);
+        this.y += 10;
+      }
+
+      const maxH = row.reduce((max, val) => Math.max(max, this.textH(val, colW - 4, FR, 8)), 14) + 6;
+      
+      // Zebra stripe
+      if (rowIndex % 2 === 1) {
+        this.doc.save().rect(X_P, this.y, TEXT_W, maxH).fill("#fafafa");
+      }
+
+      row.forEach((val, i) => {
+        const x = X_P + i * colW;
+        this.vl(x, this.y, this.y + maxH);
+        this.txt(val, x + 2, this.y + 3, colW - 4, FR, 8, "left", true);
+      });
+      this.vl(X_END, this.y, this.y + maxH);
+      this.hr(this.y + maxH, 0.1); // thin grid line
+      this.y += maxH;
+    });
+
+    this.hr(this.y, LW_OUTER);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SHEET RENDERING ENTRY POINT
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -909,7 +988,8 @@ const renderSheet = (
   // US Letter portrait
   doc.addPage({ size: [PW, PH], margin: OUTER_M, layout: "portrait" });
 
-  new VoucherRenderer(doc).render(sheetName, rows, sheet["!merges"] || []);
+  const renderer: Renderer = isVoucher ? new VoucherRenderer(doc) : new ReportRenderer(doc);
+  renderer.render(sheetName, rows, sheet["!merges"] || []);
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
