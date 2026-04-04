@@ -903,7 +903,7 @@ class ReportRenderer extends BaseRenderer implements Renderer {
     this.y = TEXT_X;
     this.outerBorder();
 
-    // ── 1. HEADER ──────────────────────────────────────────────────────
+    // ── 1. HEADER (Title) ──────────────────────────────────────────────
     this.y = TEXT_X + 8;
     this.txt(sheetName, X_P, this.y, TEXT_W, FB, 16, "center");
     this.y += 25;
@@ -919,30 +919,35 @@ class ReportRenderer extends BaseRenderer implements Renderer {
     // ── 3. TABLE ────────────────────────────────────────────────────────
     const [header, ...body] = rows;
 
-    // Render Headers
-    this.doc.save().rect(X_P, this.y, TEXT_W, HEADER_ROW_H).fill("#f5f5f5");
-    this.box(X_P, this.y, TEXT_W, HEADER_ROW_H, LW_OUTER);
-    
-    header.forEach((val, i) => {
-      const x = X_P + i * colW;
-      this.vl(x, this.y, this.y + HEADER_ROW_H);
-      this.txt(val, x + 2, this.y + 5, colW - 4, FB, 8, "center");
-    });
-    this.vl(X_END, this.y, this.y + HEADER_ROW_H);
-    this.y += HEADER_ROW_H;
+    const renderTableHeaders = (yPos: number) => {
+      this.doc.save().rect(X_P, yPos, TEXT_W, HEADER_ROW_H).fill("#f5f5f5");
+      this.box(X_P, yPos, TEXT_W, HEADER_ROW_H, LW_OUTER);
+      header.forEach((val, i) => {
+        const x = X_P + i * colW;
+        this.vl(x, yPos, yPos + HEADER_ROW_H);
+        this.txt(val, x + 2, yPos + 5, colW - 4, FB, 8, "center");
+      });
+      this.vl(X_END, yPos, yPos + HEADER_ROW_H);
+      return yPos + HEADER_ROW_H;
+    };
+
+    // Initial Headers
+    this.y = renderTableHeaders(this.y);
 
     // Render Body
     body.forEach((row, rowIndex) => {
+      const maxH = row.reduce((max, val) => Math.max(max, this.textH(val, colW - 4, FR, 8)), 14) + 6;
+
       // Pagination check (keep safe margin)
-      if (this.y > PH - OUTER_M - 50) {
+      if (this.y + maxH > PH - OUTER_M - 20) {
         this.doc.addPage({ size: [PW, PH], margin: OUTER_M });
         this.y = OUTER_M + 20;
         this.outerBorder();
         this.hr(this.y, 0.8);
         this.y += 10;
+        // Re-render headers on new page
+        this.y = renderTableHeaders(this.y);
       }
-
-      const maxH = row.reduce((max, val) => Math.max(max, this.textH(val, colW - 4, FR, 8)), 14) + 6;
       
       // Zebra stripe
       if (rowIndex % 2 === 1) {
