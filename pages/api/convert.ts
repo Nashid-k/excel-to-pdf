@@ -1027,9 +1027,8 @@ const renderSheet = (
   analysis: FileAnalysis,
   summaries: SheetSummary[]
 ) => {
-  const isVoucher =
-    (analysis.sheetLayoutMeta[sheetName] ??
-     ((summaries.find((s) => s.name === sheetName)?.merges ?? 0) > 10 ? "VOUCHER" : "REPORT")) === "VOUCHER";
+  // Force every sheet to use the Voucher layout (Particulars, Amount, Remarks)
+  const isVoucher = true;
 
   let rows = getSheetRows(sheet);
   if (!isVoucher) {
