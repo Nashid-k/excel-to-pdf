@@ -377,7 +377,7 @@ const TABLE_BODY_MIN_H = 300;  // minimum body area height (creates the big empt
 const HEADER_ROW_H    = 18;
 const SUB_LABEL_H     = 14;
 const TOTAL_ROW_H     = 16;
-const SIG_ROW_H       = 50;
+const SIG_ROW_H       = 45;
 const FOOTER_ROW_H    = 20;
 
 interface Renderer {
@@ -390,6 +390,31 @@ class BaseRenderer {
 
   constructor(doc: PDFKitDocument) {
     this.doc = doc;
+  }
+
+  // ── Branding & Borders (Repeatable on every page) ────────────────────
+  protected renderPageDecorations(companyName: string, supportLines: string[], docTitle: string) {
+    this.outerBorder();
+    this.y = TEXT_X + 12;
+
+    // Company Header
+    this.txt(companyName, X_P, this.y, TEXT_W, FB, SZ_CO, "center");
+    this.y += 24;
+
+    for (const line of supportLines) {
+      this.txt(line, X_P, this.y, TEXT_W, FR, SZ_AD, "center", false, C_GRAY);
+      this.y += 14;
+    }
+
+    this.y += 5;
+
+    // Voucher Title Box
+    this.hr(this.y, LW_TABLE, X_P, X_END, C_BORDER);
+    this.y += 4;
+    this.txt(docTitle, X_P, this.y, TEXT_W, FB, SZ_TI, "center");
+    this.y += 18;
+    this.hr(this.y, LW_TABLE, X_P, X_END, C_BORDER);
+    this.y += 15;
   }
 
   protected outerBorder() {
@@ -643,40 +668,13 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
     const summaryRows = classified.filter((r) => r.section === "SUMMARY");
     const footerRows  = classified.filter((r) => r.section === "FOOTER");
 
-    this.y = TEXT_X;
-    this.outerBorder();
-    this.renderHeader(headerRows, sheetName);
+    const { companyName, supportLines, documentTitle } = this.parseHeader(headerRows, sheetName);
+
+    this.renderPageDecorations(companyName, supportLines, documentTitle);
     this.renderMeta(metaBefore);
     this.renderTable(tableHeader, bodyRows, summaryRows);
     this.renderAmountWords(summaryRows);
     this.renderFooter(footerRows);
-  }
-
-  // ── 1. COMPANY HEADER ────────────────────────────────────────────────
-  private renderHeader(rows: ClassifiedRow[], sheetName: string) {
-    const { companyName, supportLines, documentTitle } = this.parseHeader(rows, sheetName);
-
-    this.y = TEXT_X + 12;
-
-    // Company name: Inter-Bold 18pt centered
-    this.txt(companyName, X_P, this.y, TEXT_W, FB, SZ_CO, "center");
-    this.y += 24;
-
-    // Address lines: Inter-Regular 10pt centered
-    for (const line of supportLines) {
-      this.txt(line, X_P, this.y, TEXT_W, FR, SZ_AD, "center", false, C_GRAY);
-      this.y += 14;
-    }
-
-    this.y += 5;
-
-    // Voucher title: thin HR above + below, Inter-Bold 14pt centered
-    this.hr(this.y, LW_TABLE, X_P, X_END, C_BORDER);
-    this.y += 4;
-    this.txt(documentTitle, X_P, this.y, TEXT_W, FB, SZ_TI, "center");
-    this.y += 18;
-    this.hr(this.y, LW_TABLE, X_P, X_END, C_BORDER);
-    this.y += 15;
   }
 
   // ── 2. VOUCHER META (No., Date, Paid to, Details) ────────────────────
@@ -907,17 +905,14 @@ class ReportRenderer extends BaseRenderer implements Renderer {
   }
 
   public render(sheetName: string, rows: string[][], _merges: any[]) {
-    this.y = TEXT_X;
-    this.outerBorder();
-
-    // ── 1. HEADER (Title) ──────────────────────────────────────────────
-    this.y = TEXT_X + 8;
-    this.txt(sheetName, X_P, this.y, TEXT_W, FB, 16, "center");
-    this.y += 25;
-    this.hr(this.y, 0.8);
-    this.y += 15;
-
     if (rows.length === 0) return;
+
+    // Extract headers for branding
+    const companyName = sheetName; // Reports use sheetName as title
+    const supportLines: string[] = [];
+    const documentTitle = "Data Report";
+
+    this.renderPageDecorations(companyName, supportLines, documentTitle);
 
     // ── 2. COLUMN WIDTHS ────────────────────────────────────────────────
     const colCount = getColumnCount(rows);
@@ -948,10 +943,8 @@ class ReportRenderer extends BaseRenderer implements Renderer {
       // Pagination check (keep safe margin)
       if (this.y + maxH > PH - OUTER_M - 20) {
         this.doc.addPage({ size: [PW, PH], margin: OUTER_M });
-        this.y = OUTER_M + 20;
-        this.outerBorder();
-        this.hr(this.y, 0.8);
-        this.y += 10;
+        this.y = TEXT_X;
+        this.renderPageDecorations(companyName, supportLines, documentTitle);
         // Re-render headers on new page
         this.y = renderTableHeaders(this.y);
       }
