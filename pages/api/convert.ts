@@ -686,9 +686,11 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
     this.txt(`Date:  ${voucherDate || "-"}`, X_P + 240, this.y, TEXT_W - 240, FB, SZ_ME, "right");
     this.y += 18;
 
-    // Paid to:- party name
-    this.txt(`${partyLabel} ${partyValue || ""}`, X_P, this.y, TEXT_W, FR, SZ_ME);
-    this.y += 16;
+    // Paid to:- party name (with multi-line support)
+    const partyFull = `${partyLabel} ${partyValue || ""}`;
+    const partyH = this.textH(partyFull, TEXT_W, FR, SZ_ME);
+    this.txt(partyFull, X_P, this.y, TEXT_W, FR, SZ_ME, "left", true);
+    this.y += partyH + 4;
 
     // Extra detail lines (Through:, Mode of Receipt:, Instrument Details:, etc.)
     if (extraLines.length > 0) {
@@ -697,8 +699,9 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
       this.txt("DETAILS", X_P, this.y, TEXT_W, FB, 7);
       this.y += 10;
       for (const line of extraLines) {
-        this.txt(line, X_P, this.y, TEXT_W, FR, SZ_ME);
-        this.y += 13;
+        const lineH = this.textH(line, TEXT_W, FR, SZ_ME);
+        this.txt(line, X_P, this.y, TEXT_W, FR, SZ_ME, "left", true);
+        this.y += lineH + 3;
       }
     }
 
