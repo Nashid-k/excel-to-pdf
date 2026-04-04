@@ -672,7 +672,7 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
 
     this.renderPageDecorations(companyName, supportLines, documentTitle);
     this.renderMeta(metaBefore);
-    this.renderTable(tableHeader, bodyRows, summaryRows);
+    this.renderTable(tableHeader, bodyRows, summaryRows, companyName, supportLines, documentTitle);
     this.renderAmountWords(summaryRows);
     this.renderFooter(footerRows);
   }
@@ -723,7 +723,10 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
   private renderTable(
     headerRow: ClassifiedRow | undefined,
     bodyRows: ClassifiedRow[],
-    summaryRows: ClassifiedRow[]
+    summaryRows: ClassifiedRow[],
+    companyName: string,
+    supportLines: string[],
+    documentTitle: string
   ) {
     // ── Column header row ──────────────────────────────────────────────
     // Extract headers from Excel, with smart fallbacks
@@ -771,22 +774,62 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
     this.txt("On Account of :", X_P + 4, this.y + 3, COL_P - 8, FB, 8);
     this.y += SUB_LABEL_H;
     this.hr(this.y, LW_TABLE);  // bottom border line
+    let bodyStartY = this.y;
 
     // ── Body rows ──────────────────────────────────────────────────────
+    // ── Body rows ──────────────────────────────────────────────────────
     const amtIdx = this.amountColIdx(headerRow, bodyRows);
-    const bodyStartY = this.y;
 
     for (const row of bodyRows.filter((r) => !isRowEmpty(r.cells))) {
       const cells = row.cells.map((c) => c.trim());
       const amountRaw = amtIdx >= 0 ? (cells[amtIdx] || "") : "";
-      const amountExtracted = this.extractAmountValue(amountRaw);  // Extract core amount
-      const amountTxt = this.normalizeAmount(amountExtracted);     // Format intelligently
+      const amountExtracted = this.extractAmountValue(amountRaw);
+      const amountTxt = this.normalizeAmount(amountExtracted);
       const descTxt   = cells.filter((_, i) => i !== amtIdx).join("  ").trim();
 
       const descH = this.textH(descTxt, COL_P - 8);
       const rowH  = Math.max(16, descH + 6);
 
-      // Side borders + column dividers only (no horizontal borders between body rows)
+      // Pagination Check (Vouchers usually single-page, but handle for safety)
+      if (this.y + rowH > PH - OUTER_M - 40) {
+        // Pad the current page table before closing
+        const prevBodyUsed = this.y - bodyStartY;
+        if (prevBodyUsed < TABLE_BODY_MIN_H) {
+          const padH = TABLE_BODY_MIN_H - prevBodyUsed;
+          this.vl(X_P,   this.y, this.y + padH);
+          this.vl(X_A,   this.y, this.y + padH);
+          this.vl(X_R,   this.y, this.y + padH);
+          this.vl(X_END, this.y, this.y + padH);
+          this.y += padH;
+        }
+        this.hr(this.y, LW_TABLE); // Close current page table with line
+        
+        this.doc.addPage({ size: [PW, PH], margin: OUTER_M });
+        this.renderPageDecorations(companyName, supportLines, documentTitle);
+        
+        // Repeat column headers on new page
+        this.box(X_P, this.y, COL_P, HEADER_ROW_H, LW_OUTER);
+        this.box(X_A, this.y, COL_A, HEADER_ROW_H, LW_OUTER);
+        this.box(X_R, this.y, COL_R, HEADER_ROW_H, LW_OUTER);
+        this.txt(labels[0], X_P + 2, this.y + 5, COL_P - 4, FB, SZ_TH, "center");
+        this.txt(labels[1], X_A + 2, this.y + 5, COL_A - 4, FB, SZ_TH, "center");
+        this.txt(labels[2], X_R + 2, this.y + 5, COL_R - 4, FB, SZ_TH, "center");
+        this.y += HEADER_ROW_H;
+        
+        // Repeat sub-label row to match first page identically
+        this.hr(this.y, LW_TABLE);
+        this.vl(X_P, this.y, this.y + SUB_LABEL_H);
+        this.vl(X_A, this.y, this.y + SUB_LABEL_H);
+        this.vl(X_R, this.y, this.y + SUB_LABEL_H);
+        this.vl(X_END, this.y, this.y + SUB_LABEL_H);
+        this.txt("Continued :", X_P + 4, this.y + 3, COL_P - 8, FB, 8);
+        this.y += SUB_LABEL_H;
+        this.hr(this.y, LW_TABLE);
+        
+        bodyStartY = this.y;
+      }
+
+      // Sidebar borders + column dividers
       this.vl(X_P,   this.y, this.y + rowH);
       this.vl(X_A,   this.y, this.y + rowH);
       this.vl(X_R,   this.y, this.y + rowH);
@@ -945,6 +988,7 @@ class ReportRenderer extends BaseRenderer implements Renderer {
 
       // Pagination check (keep safe margin)
       if (this.y + maxH > PH - OUTER_M - 20) {
+        this.hr(this.y, 0.1); // Close table on current page
         this.doc.addPage({ size: [PW, PH], margin: OUTER_M });
         this.y = TEXT_X;
         this.renderPageDecorations(companyName, supportLines, documentTitle);
