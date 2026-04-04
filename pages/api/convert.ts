@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import fs from "fs";
+import path from "path";
 import PDFDocument from "pdfkit";
 import * as xlsx from "xlsx";
 import type { File, Fields } from "formidable";
@@ -348,23 +349,29 @@ const X_R = X_A + COL_A;
 const X_END = X_P + TEXT_W;
 
 // ── Fonts ────────────────────────────────────────────────────────────────
-const FR = "Times-Roman";
-const FB = "Times-Bold";
+const FR = "Inter-Regular";
+const FB = "Inter-Bold";
+
+// ── Colors ───────────────────────────────────────────────────────────────
+const C_TEXT   = "#111827";  // Charcoal Gray
+const C_GRAY   = "#4B5563";  // Medium Gray
+const C_BORDER = "#D1D5DB";  // Light Border
+const C_BG     = "#F9FAFB";  // Subtle BG
 
 // ── Font sizes ───────────────────────────────────────────────────────────
-const SZ_CO = 16;   // company name
+const SZ_CO = 18;   // company name
 const SZ_AD = 10;   // address
-const SZ_TI = 13;   // voucher title
+const SZ_TI = 14;   // voucher title
 const SZ_ME = 10;   // meta (No., Date, Paid to)
-const SZ_TH = 9;    // table header
+const SZ_TH = 10;   // table header
 const SZ_TB = 9;    // table body
-const SZ_TO = 9;    // total row
+const SZ_TO = 10;   // total row
 const SZ_WD = 9;    // amount in words
 const SZ_FT = 9;    // footer
 
 // ── Line weights ─────────────────────────────────────────────────────────
 const LW_OUTER = 0.8;
-const LW_TABLE = 0.5;
+const LW_TABLE = 0.4;
 
 // ── Layout constants ─────────────────────────────────────────────────────
 const TABLE_BODY_MIN_H = 300;  // minimum body area height (creates the big empty space)
@@ -384,32 +391,41 @@ class BaseRenderer {
 
   constructor(doc: PDFKitDocument) {
     this.doc = doc;
+    // Register fonts automatically in constructors
+    try {
+      const regularPath = path.join(process.cwd(), "fonts", "Inter-Regular.ttf");
+      const boldPath    = path.join(process.cwd(), "fonts", "Inter-Bold.ttf");
+      if (fs.existsSync(regularPath)) this.doc.registerFont(FR, regularPath);
+      if (fs.existsSync(boldPath))    this.doc.registerFont(FB, boldPath);
+    } catch (e) {
+      console.warn("Failed to load Inter fonts, falling back to Helvetica:", e);
+    }
   }
 
   protected outerBorder() {
     this.doc.save()
-      .lineWidth(LW_OUTER).strokeColor("#000")
+      .lineWidth(LW_OUTER).strokeColor(C_BORDER)
       .rect(OUTER_M, OUTER_M, PW - OUTER_M * 2, PH - OUTER_M * 2)
       .stroke().restore();
   }
 
-  protected hr(y: number, lw = LW_TABLE, xStart = X_P, xEnd = X_END) {
+  protected hr(y: number, lw = LW_TABLE, xStart = X_P, xEnd = X_END, color = C_BORDER) {
     this.doc.save()
-      .lineWidth(lw).strokeColor("#000")
+      .lineWidth(lw).strokeColor(color)
       .moveTo(xStart, y).lineTo(xEnd, y)
       .stroke().restore();
   }
 
-  protected vl(x: number, y1: number, y2: number, lw = LW_TABLE) {
+  protected vl(x: number, y1: number, y2: number, lw = LW_TABLE, color = C_BORDER) {
     this.doc.save()
-      .lineWidth(lw).strokeColor("#000")
+      .lineWidth(lw).strokeColor(color)
       .moveTo(x, y1).lineTo(x, y2)
       .stroke().restore();
   }
 
-  protected box(x: number, y: number, w: number, h: number, lw = LW_TABLE) {
+  protected box(x: number, y: number, w: number, h: number, lw = LW_TABLE, color = C_BORDER) {
     this.doc.save()
-      .lineWidth(lw).strokeColor("#000")
+      .lineWidth(lw).strokeColor(color)
       .rect(x, y, w, h).stroke().restore();
   }
 
@@ -417,9 +433,10 @@ class BaseRenderer {
     s: string, x: number, y: number, w: number,
     font = FR, size = SZ_TB,
     align: "left" | "center" | "right" = "left",
-    lineBreak = false
+    lineBreak = false,
+    color = C_TEXT
   ) {
-    this.doc.font(font).fontSize(size).fillColor("#000")
+    this.doc.font(font).fontSize(size).fillColor(color)
       .text(s, x, y, { width: w, align, lineBreak });
   }
 
@@ -649,27 +666,27 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
   private renderHeader(rows: ClassifiedRow[], sheetName: string) {
     const { companyName, supportLines, documentTitle } = this.parseHeader(rows, sheetName);
 
-    this.y = TEXT_X + 8;
+    this.y = TEXT_X + 12;
 
-    // Company name: Times-Bold 16pt centered
+    // Company name: Inter-Bold 18pt centered
     this.txt(companyName, X_P, this.y, TEXT_W, FB, SZ_CO, "center");
-    this.y += 20;
+    this.y += 24;
 
-    // Address lines: Times-Roman 10pt centered
+    // Address lines: Inter-Regular 10pt centered
     for (const line of supportLines) {
-      this.txt(line, X_P, this.y, TEXT_W, FR, SZ_AD, "center");
-      this.y += 13;
+      this.txt(line, X_P, this.y, TEXT_W, FR, SZ_AD, "center", false, C_GRAY);
+      this.y += 14;
     }
 
     this.y += 5;
 
-    // Voucher title: thin HR above + below, Times-Bold 13pt centered
-    this.hr(this.y, LW_TABLE);
+    // Voucher title: thin HR above + below, Inter-Bold 14pt centered
+    this.hr(this.y, LW_TABLE, X_P, X_END, C_BORDER);
     this.y += 4;
     this.txt(documentTitle, X_P, this.y, TEXT_W, FB, SZ_TI, "center");
-    this.y += 17;
-    this.hr(this.y, LW_TABLE);
-    this.y += 10;
+    this.y += 18;
+    this.hr(this.y, LW_TABLE, X_P, X_END, C_BORDER);
+    this.y += 15;
   }
 
   // ── 2. VOUCHER META (No., Date, Paid to, Details) ────────────────────
@@ -679,11 +696,11 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
     // No.: XXXXX  (left)          Date: DD-MM-YYYY (right) — same line
     this.txt(`No.:  ${voucherNo || "-"}`, X_P, this.y, 240, FB, SZ_ME, "left");
     this.txt(`Date:  ${voucherDate || "-"}`, X_P + 240, this.y, TEXT_W - 240, FB, SZ_ME, "right");
-    this.y += 16;
+    this.y += 18;
 
     // Paid to:- party name
     this.txt(`${partyLabel} ${partyValue || ""}`, X_P, this.y, TEXT_W, FR, SZ_ME);
-    this.y += 14;
+    this.y += 16;
 
     // Extra detail lines (Through:, Mode of Receipt:, Instrument Details:, etc.)
     if (extraLines.length > 0) {
@@ -920,12 +937,12 @@ class ReportRenderer extends BaseRenderer implements Renderer {
     const [header, ...body] = rows;
 
     const renderTableHeaders = (yPos: number) => {
-      this.doc.save().rect(X_P, yPos, TEXT_W, HEADER_ROW_H).fill("#f5f5f5");
+      this.doc.save().rect(X_P, yPos, TEXT_W, HEADER_ROW_H).fill(C_BG);
       this.box(X_P, yPos, TEXT_W, HEADER_ROW_H, LW_OUTER);
       header.forEach((val, i) => {
         const x = X_P + i * colW;
         this.vl(x, yPos, yPos + HEADER_ROW_H);
-        this.txt(val, x + 2, yPos + 5, colW - 4, FB, 8, "center");
+        this.txt(val, x + 2, yPos + 5, colW - 4, FB, 10, "center");
       });
       this.vl(X_END, yPos, yPos + HEADER_ROW_H);
       return yPos + HEADER_ROW_H;
@@ -951,7 +968,7 @@ class ReportRenderer extends BaseRenderer implements Renderer {
       
       // Zebra stripe
       if (rowIndex % 2 === 1) {
-        this.doc.save().rect(X_P, this.y, TEXT_W, maxH).fill("#fafafa");
+        this.doc.save().rect(X_P, this.y, TEXT_W, maxH).fill(C_BG);
       }
 
       row.forEach((val, i) => {
