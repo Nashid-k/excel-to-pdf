@@ -290,7 +290,7 @@ const getRenderableSheetNames = (workbook: Workbook, summaries: SheetSummary[], 
 };
 
 const isTableHeaderRow = (row: string[]) => /particulars|description|item\b|amount|rate|qty|quantity|credit|debit|sl\.?\s*no|details\s*of\s*payment/i.test(row.join(" "));
-const isMetaRow = (row: string[]) => /^(no|date|through|ca\.?\s*no|mode|party|a\/c|bank|ifsc|branch|cheque|utr)[\s]*[:\-]/i.test(row.filter(v => v.trim()).join(" "));
+const isMetaRow = (row: string[]) => /^(no|date|through|ca\.?\s*no|a\/c\.?\s*no|mode|party|a\/c|bank|ifsc|branch|cheque|utr)[\s]*[:\-]/i.test(row.filter(v => v.trim()).join(" "));
 const isTotalRow = (row: string[]) => {
   const joined = row.join(" ").toLowerCase();
   if (/brought\s*forward|carried\s*forward|\bb\/?f\b|\bc\/?f\b/i.test(joined)) return false;
@@ -321,6 +321,7 @@ const classifyRows = (rows: string[][], _merges: any[]): ClassifiedRow[] => {
     if (isSignatureRow(row)) { footerStarted = true; tableEnded = true; classified.push({ section: "FOOTER", rowIndex: r, cells: row }); continue; }
     if (!tableHeaderFound) {
       if (isTableHeaderRow(row)) { tableHeaderFound = true; classified.push({ section: "TABLE_HEADER", rowIndex: r, cells: row }); continue; }
+      if (isMetaRow(row)) { classified.push({ section: "META", rowIndex: r, cells: row }); continue; }
       if (r <= 8) classified.push({ section: "HEADER", rowIndex: r, cells: row });
       else classified.push({ section: "META", rowIndex: r, cells: row });
     } else {
@@ -379,10 +380,11 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
   private numericTotal = 0;
   constructor(doc: PDFKitDocument, design?: any) { super(doc, design); }
   private parseHeader(rows: ClassifiedRow[], sheetName: string) {
+    const metaPattern = /^(through|no\.?\s*:|date\s*[:\-]|mode\s*of|ca\.?\s*no|a\/c\.?\s*no|branch|ifsc|bank|cheque|utr|paid\s*to|received\s*from|party)/i;
     const texts = rows.map(r => r.cells.filter(c => c.trim()).join("  ").trim()).filter(Boolean);
     const titleIdx = texts.findIndex(t => /voucher|invoice|receipt|payment/i.test(t));
     const documentTitle = titleIdx >= 0 ? texts[titleIdx] : "Cash Payment Voucher";
-    const nonTitle = texts.filter((_, i) => i !== titleIdx);
+    const nonTitle = texts.filter((_, i) => i !== titleIdx).filter(t => !metaPattern.test(t));
     const companyName = [...nonTitle].sort((a, b) => b.length - a.length)[0] || sheetName;
     return { companyName, supportLines: nonTitle.filter(t => t !== companyName), documentTitle };
   }
@@ -394,14 +396,20 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
   private parseVoucherMeta(rows: ClassifiedRow[]) {
     const text = rows.map(r => r.cells.join(" ")).join(" | ");
     let vDate = "", vNo = "";
-    const dm = text.match(/\bdate\s*[:\-]?\s*([^\|]+?)(?=\s*(?:through|mode|paid|received|no:|\|)|$)/i);
+    const dm = text.match(/\bdate\s*[:\-]?\s*([^\|]+?)(?=\s*(?:through|mode|paid|received|no\.?|\|)|$)/i);
     if (dm) vDate = this.fmtDate(dm[1].trim().split(/\s+/)[0]);
     const nm = text.match(/(?:no\.?|voucher\s*no\.?)\s*[:\-]?\s*(\d+|\w+)/i);
     if (nm) vNo = nm[1].trim();
-    const party = this.findMetaVal(rows, [/^paid\s*to\s*[:\-]?\s*(.+)$/i, /^received\s*from\s*[:\-]?\s*(.+)$/i, /^party\s*name\s*[:\-]\s*(.+)$/i]);
+    const through = this.findMetaVal(rows, [/^through\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|mode|paid|received|\|)|$)/i]);
+    const bankDetails = this.findMetaVal(rows, [/^branch\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|\|)|$)/i, /^ifsc\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|\|)|$)/i, /^(?:ca\.?no|a\/c\.?no)\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|\|)|$)/i]);
+    const party = this.findMetaVal(rows, [/^paid\s*to\s*[:\-]?\s*(.+)$/i, /^received\s*from\s*[:\-]?\s*(.+)$/i, /^party\s*name\s*[:\-]\s*(.+)$/i]) 
+                  || this.findMetaVal(rows, [/ca\.?no\s*[:\-]?\s*\d+\s+(.+)$/i]);
     const label = /received\s*from/i.test(text) ? "Received from:-" : "Paid to:-";
-    const extra = rows.map(r => r.cells.map(c => c.trim()).filter(Boolean).join("  ")).filter(j => j && !/^(no\.?|vouch|date|paid|recei|party)/i.test(j));
-    return { vNo, vDate, label, party, extra };
+    const extra = rows.map(r => r.cells.map(c => c.trim()).filter(Boolean).join("  ")).filter(j => {
+      if (!j) return false;
+      return !/^(no\.?|vouch|date|paid|recei|party|through|branch|ifsc|ca\.?no|a\/c\.?no|bank)/i.test(j);
+    });
+    return { vNo, vDate, label, party, through, bankDetails, extra };
   }
   private amountColIdx(headerRow: ClassifiedRow | undefined, bodyRows: ClassifiedRow[], targetTotal?: number): number {
     if (headerRow) { 
@@ -467,14 +475,17 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
     this.renderFooter(fRows);
   }
   private renderMeta(rows: ClassifiedRow[]) {
-    const { vNo, vDate, label, party, extra } = this.parseVoucherMeta(rows);
+    const { vNo, vDate, label, party, through, bankDetails, extra } = this.parseVoucherMeta(rows);
     this.txt(`No.:  ${vNo || "-"}`, this.dyn.X_P, this.y, 240, FB, this.dyn.SZ_ME);
     this.txt(`Date:  ${vDate || "-"}`, this.dyn.X_P + 240, this.y, this.dyn.TEXT_W - 240, FB, this.dyn.SZ_ME, "right");
-    this.y += 18;
-    const pf = `${label} ${party || ""}`; this.txt(pf, this.dyn.X_P, this.y, this.dyn.TEXT_W, FR, this.dyn.SZ_ME, "left", true);
-    this.y += this.textH(pf, this.dyn.TEXT_W, FR, this.dyn.SZ_ME) + 4;
-    if (extra.length > 0) { this.y += 3; this.txt("DETAILS", this.dyn.X_P, this.y, this.dyn.TEXT_W, FB, 7); this.y += 10; for (const l of extra) { const lh = this.textH(l, this.dyn.TEXT_W, FR, this.dyn.SZ_ME); this.txt(l, this.dyn.X_P, this.y, this.dyn.TEXT_W, FR, this.dyn.SZ_ME, "left", true); this.y += lh + 3; } }
-    this.y += 4;
+    this.y += 22;
+    const pf = `${label} ${party || ""}`; 
+    this.txt(pf, this.dyn.X_P, this.y, this.dyn.TEXT_W, FB, this.dyn.SZ_ME, "left", true);
+    this.y += this.textH(pf, this.dyn.TEXT_W, FB, this.dyn.SZ_ME) + 10;
+    if (through) { this.txt(`Through:- ${through}`, this.dyn.X_P, this.y, this.dyn.TEXT_W, FR, this.dyn.SZ_ME, "left", true); this.y += this.textH(`Through:- ${through}`, this.dyn.TEXT_W, FR, this.dyn.SZ_ME) + 8; }
+    if (bankDetails) { this.txt(bankDetails, this.dyn.X_P, this.y, this.dyn.TEXT_W, FR, this.dyn.SZ_ME, "left", true); this.y += this.textH(bankDetails, this.dyn.TEXT_W, FR, this.dyn.SZ_ME) + 8; }
+    if (extra.length > 0) { this.y += 6; this.txt("OTHER DETAILS", this.dyn.X_P, this.y, this.dyn.TEXT_W, FB, 7+1); this.y += 14; for (const l of extra) { const lh = this.textH(l, this.dyn.TEXT_W, FR, this.dyn.SZ_ME); this.txt(l, this.dyn.X_P, this.y, this.dyn.TEXT_W, FR, this.dyn.SZ_ME, "left", true); this.y += lh + 6; } }
+    this.y += 8;
   }
   private renderTable(th: ClassifiedRow | undefined, br: ClassifiedRow[], sr: ClassifiedRow[], cn: string, sl: string[], dt: string) {
     this.renderTableHeader(["Particulars", "Amount", "Remarks"]);
@@ -493,7 +504,7 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
       if (!rawAmt && descBase) { const matches = [...descBase.matchAll(/\b-?(\d{1,3}(?:,\d{3})+|\d{4,}|\d+)(?:\.\d{2,})?\b/g)]; if (matches.length > 0) { rawAmt = matches[matches.length - 1][0]; descBase = descBase.replace(rawAmt, "").trim(); } }
       const val = parseFloat(this.extractAmountValue(rawAmt).replace(/,/g, "")) || 0;
       const isMajor = /details\s*of\s*payment|party(?:'?s?)?\s*bank\s*details|bank\s*details/i.test(descBase);
-      const isField = /\b(?:a\/c\.?\s*(?:name|no\.?)|ifsc|utr|bank\s*name|branch|name\s*of\s*the\s*bank)\b/i.test(descBase);
+      const isField = /\b(?:a\/c\.?\s*(?:name|no\.?)|ifsc|utr|bank\s*name|branch|name\s*of\s*the\s*bank|through|ca\.?no)\b/i.test(descBase);
       const desc = (!isMajor && !isField && descBase) ? `${rowIndex}. ${descBase}` : isMajor ? descBase.toUpperCase() : descBase;
       if (!isMajor && !isField && descBase) rowIndex++;
       processedRows.push({ desc, amtTxt: this.normalizeAmount(String(val)), val, isHeader: isMajor, isField, padding: isMajor ? 16 : isField ? 12 : 10 });
