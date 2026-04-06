@@ -290,7 +290,13 @@ const getRenderableSheetNames = (workbook: Workbook, summaries: SheetSummary[], 
 };
 
 const isTableHeaderRow = (row: string[]) => /particulars|description|item\b|amount|rate|qty|quantity|credit|debit|sl\.?\s*no|details\s*of\s*payment/i.test(row.join(" "));
-const isMetaRow = (row: string[]) => /^(no|date|through|ca\.?\s*no|a\/c\.?\s*no|mode|party|a\/c|bank|ifsc|branch|cheque|utr)[\s]*[:\-]/i.test(row.filter(v => v.trim()).join(" "));
+const isMetaRow = (row: string[]) => {
+  const j = row.filter(v => v.trim()).join(" ");
+  const META_KEYS = "no\\.?|voucher\\s*no\\.?|invoice\\s*no\\.?|date|through|ca\\.?\\s*no|a\\/c\\.?\\s*no|mode|party|a\\/c|bank|ifsc|branch|cheque|utr|paid\\s*to|received\\s*from";
+  const rx1 = new RegExp(`^(${META_KEYS})\\b`, "i");
+  const rx2 = new RegExp(`\\b(${META_KEYS})[\\s]*[:\\-]`, "i");
+  return rx1.test(j) || rx2.test(j);
+};
 const isTotalRow = (row: string[]) => {
   const joined = row.join(" ").toLowerCase();
   if (/brought\s*forward|carried\s*forward|\bb\/?f\b|\bc\/?f\b/i.test(joined)) return false;
@@ -380,7 +386,7 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
   private numericTotal = 0;
   constructor(doc: PDFKitDocument, design?: any) { super(doc, design); }
   private parseHeader(rows: ClassifiedRow[], sheetName: string) {
-    const metaPattern = /^(through|no\.?\s*:|date\s*[:\-]|mode\s*of|ca\.?\s*no|a\/c\.?\s*no|branch|ifsc|bank|cheque|utr|paid\s*to|received\s*from|party)/i;
+    const metaPattern = /^(through|no\.?[\s:]|voucher\s*no|date|mode\s*of|ca\.?\s*no|a\/c\.?\s*no|branch|ifsc|bank|cheque|utr|paid\s*to|received\s*from|party)/i;
     const texts = rows.map(r => r.cells.filter(c => c.trim()).join("  ").trim()).filter(Boolean);
     const titleIdx = texts.findIndex(t => /voucher|invoice|receipt|payment/i.test(t));
     const documentTitle = titleIdx >= 0 ? texts[titleIdx] : "Cash Payment Voucher";
@@ -396,14 +402,17 @@ class VoucherRenderer extends BaseRenderer implements Renderer {
   private parseVoucherMeta(rows: ClassifiedRow[]) {
     const text = rows.map(r => r.cells.join(" ")).join(" | ");
     let vDate = "", vNo = "";
-    const dm = text.match(/\bdate\s*[:\-]?\s*([^\|]+?)(?=\s*(?:through|mode|paid|received|no\.?|\|)|$)/i);
+    const dm = text.match(/\bdate\s*[:\-]?\s*([^\|]+?)(?=\s*(?:through|mode|paid|received|party|no\.?|\|)|$)/i);
     if (dm) vDate = this.fmtDate(dm[1].trim().split(/\s+/)[0]);
-    const nm = text.match(/(?:no\.?|voucher\s*no\.?)\s*[:\-]?\s*(\d+|\w+)/i);
-    if (nm) vNo = nm[1].trim();
-    const through = this.findMetaVal(rows, [/^through\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|mode|paid|received|\|)|$)/i]);
-    const bankDetails = this.findMetaVal(rows, [/^branch\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|\|)|$)/i, /^ifsc\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|\|)|$)/i, /^(?:ca\.?no|a\/c\.?no)\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|\|)|$)/i]);
-    const party = this.findMetaVal(rows, [/^paid\s*to\s*[:\-]?\s*(.+)$/i, /^received\s*from\s*[:\-]?\s*(.+)$/i, /^party\s*name\s*[:\-]\s*(.+)$/i]) 
-                  || this.findMetaVal(rows, [/ca\.?no\s*[:\-]?\s*\d+\s+(.+)$/i]);
+    const nm = text.match(/(?:voucher\s*no\.?|invoice\s*no\.?|bill\s*no\.?|no\.?)\s*[:\-]?\s*([a-zA-Z0-9\-\/]+)/i);
+    if (nm && nm[1].toLowerCase() !== "objection") vNo = nm[1].trim();
+    const through = this.findMetaVal(rows, [/\bthrough\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|mode|paid|received|party|\|)|$)/i]);
+    const bankDetails = this.findMetaVal(rows, [/\bbranch\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|paid|received|party|\|)|$)/i, /\bifsc\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|paid|received|party|\|)|$)/i, /\b(?:ca\.?no|a\/c\.?no|a\/c\s*name|bank\s*name)\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|paid|received|party|\|)|$)/i]);
+    const party = this.findMetaVal(rows, [
+      /\bpaid\s*to\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|mode|branch|bank|\|)|$)/i, 
+      /\breceived\s*from\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|mode|branch|bank|\|)|$)/i, 
+      /\bparty\s*name\s*[:\-]?\s*(.+?)(?=\s*(?:no\.?|date|through|mode|branch|bank|\|)|$)/i
+    ]) || this.findMetaVal(rows, [/\bca\.?no\s*[:\-]?\s*\d+\s+(.+?)(?=\s*(?:no\.?|date|through|mode|branch|bank|\|)|$)/i]);
     const label = /received\s*from/i.test(text) ? "Received from:-" : "Paid to:-";
     const extra = rows.map(r => r.cells.map(c => c.trim()).filter(Boolean).join("  ")).filter(j => {
       if (!j) return false;
