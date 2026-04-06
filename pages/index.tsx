@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useState, type FormEvent, useRef, useEffect } from "react";
+import { useState, type FormEvent, useRef, useEffect, type DragEvent } from "react";
 import {
   Box,
   Button,
@@ -12,24 +12,61 @@ import {
   Text,
   Badge,
   useToast,
-  Icon,
   Center,
+  useColorMode,
+  useColorModeValue,
+  IconButton,
 } from "@chakra-ui/react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Bubbly Motion components
+// Clean Motion components
 const MotionBox = motion(Box);
 const MotionStack = motion(Stack);
 const MotionHeading = motion(Heading);
 const MotionText = motion(Text);
 
-type WorkbookAnalysisItem = {
-  fileName: string;
-  mode: "groq" | "fallback";
-  selectedSheets: string[];
-  ignoredSheets: string[];
-  reason: string;
-  warnings: string[];
+// Animated Theme Switcher Component
+const ThemeSwitcher = () => {
+  const { colorMode, toggleColorMode } = useColorMode();
+  const iconColor = useColorModeValue("orange.400", "yellow.300");
+  const bg = useColorModeValue("white", "whiteAlpha.100");
+  const border = useColorModeValue("#D2D2D7", "#3A3A3C");
+
+  return (
+    <MotionBox
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.5 }}
+      position="absolute"
+      top={{ base: "20px", md: "40px" }}
+      right={{ base: "20px", md: "40px" }}
+      zIndex={100}
+    >
+      <IconButton
+        aria-label="Toggle Theme"
+        icon={
+          <MotionBox
+            key={colorMode}
+            initial={{ rotate: -90, opacity: 0, scale: 0.5 }}
+            animate={{ rotate: 0, opacity: 1, scale: 1 }}
+            transition={{ type: "spring", damping: 12 }}
+            fontSize="xl"
+          >
+            {colorMode === "light" ? "🌙" : "☀️"}
+          </MotionBox>
+        }
+        onClick={toggleColorMode}
+        variant="outline"
+        borderRadius="14px"
+        bg={bg}
+        borderColor={border}
+        _hover={{ bg: useColorModeValue("gray.50", "whiteAlpha.200"), transform: "scale(1.05)" }}
+        _active={{ transform: "scale(0.95)" }}
+        size="lg"
+        boxShadow="sm"
+      />
+    </MotionBox>
+  );
 };
 
 export default function Home() {
@@ -40,14 +77,29 @@ export default function Home() {
   const [isHovering, setIsHovering] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
+  const { colorMode } = useColorMode();
+
+  // Responsive Colors
+  const bgColor = useColorModeValue("#F5F5F7", "#000000");
+  const cardBg = useColorModeValue("white", "#1C1C1E");
+  const cardBorder = useColorModeValue("#D2D2D7", "#3A3A3C");
+  const headingColor = useColorModeValue("#1D1D1F", "#F5F5F7");
+  const subTextColor = useColorModeValue("#86868B", "#A1A1A6");
+  const inputBg = useColorModeValue("#F5F5F7", "#2C2C2E");
+  const dropzoneBg = useColorModeValue("#F5F5F7", "#1C1C1E");
+  const loaderOverlayBg = useColorModeValue("rgba(255, 255, 255, 0.9)", "rgba(28, 28, 30, 0.9)");
 
   const funnyLoadingTexts = [
-    "Mathaji is eating your Excel... 🥗",
+    "Mathaji Excel thinnukayaanu... 🥙",
     "Mathaji is aligning Particulars... ✨",
-    "Mathaji is counting all the Money... 💰",
+    "PDF varum, onnu wait cheyyu... ⏳",
+    "Kanakku kootti thalapennu! 🤯",
+    "Polichadukkaan ready aayikkolu... 🚀",
     "Mathaji is consulting the AI spirits... 🔮",
-    "Mathaji is crafting your PDF masterpiece... 🎨",
-    "Mathaji is wrapping it up for you! 🎁"
+    "Shsh.. Mathaji dhyanathilaanu... 🧘",
+    "hampir ready aayi! 🍫",
+    "Mathaji crafting your PDF masterpiece... 🎨",
+    "Basking in your document's aura... ✨"
   ];
 
   useEffect(() => {
@@ -55,7 +107,7 @@ export default function Home() {
     if (loading) {
       interval = setInterval(() => {
         setLoadingTextIndex((prev) => (prev + 1) % funnyLoadingTexts.length);
-      }, 2500);
+      }, 1500);
     } else {
       setLoadingTextIndex(0);
     }
@@ -67,8 +119,8 @@ export default function Home() {
 
     if (!pdfName.trim()) {
       toast({ 
-        title: "Oh no! 🙀", 
-        description: "Mathaji says you forgot a document name!", 
+        title: "Missing Name", 
+        description: "Please provide a name for your masterpiece.", 
         status: "warning", 
         duration: 4000, 
         isClosable: true,
@@ -79,8 +131,8 @@ export default function Home() {
 
     if (!files || files.length === 0) {
       toast({ 
-        title: "Wait! 🛑", 
-        description: "Mathaji needs at least one Excel file to snack on!", 
+        title: "No Files", 
+        description: "Mathaji needs at least one Excel file to process.", 
         status: "warning", 
         duration: 4000, 
         isClosable: true,
@@ -95,6 +147,8 @@ export default function Home() {
 
     try {
       setLoading(true);
+      const startTime = Date.now();
+      
       const response = await fetch("/api/convert", {
         method: "POST",
         body: formData,
@@ -106,6 +160,12 @@ export default function Home() {
       }
 
       const blob = await response.blob();
+      
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 5000) {
+        await new Promise((resolve) => setTimeout(resolve, 5000 - elapsed));
+      }
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -116,8 +176,8 @@ export default function Home() {
       window.URL.revokeObjectURL(url);
       
       toast({
-        title: "Yay! 🎊",
-        description: "Mathaji made your PDF perfectly! Enjoy! 🎈",
+        title: "Done! 🎊",
+        description: "Your PDF is ready for the world.",
         status: "success",
         duration: 5000,
         isClosable: true,
@@ -126,8 +186,8 @@ export default function Home() {
       });
     } catch (error) {
       toast({
-        title: "Oopsie! 🍄",
-        description: error instanceof Error ? error.message : "Something went wrong with Mathaji.",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Something went wrong.",
         status: "error",
         duration: 6000,
         isClosable: true,
@@ -137,167 +197,117 @@ export default function Home() {
     }
   };
 
-  // Squishy floating background blobs
-  const Background = () => (
-    <Box position="fixed" top={0} left={0} w="100%" h="100%" zIndex={-1} overflow="hidden" bg="orange.50">
-      <MotionBox
-        position="absolute"
-        top="-5%" left="-5%" w="60vw" h="60vw" 
-        bg="pink.200" filter="blur(100px)" opacity={0.7}
-        animate={{ 
-          x: [0, 60, 0], 
-          y: [0, -40, 0],
-          borderRadius: ["40% 60% 70% 30% / 40% 50% 60% 50%", "60% 40% 30% 70% / 50% 60% 40% 60%", "40% 60% 70% 30% / 40% 50% 60% 50%"]
-        }}
-        transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <MotionBox
-        position="absolute"
-        bottom="-10%" right="-5%" w="50vw" h="50vw" 
-        bg="blue.200" filter="blur(110px)" opacity={0.6}
-        animate={{ 
-          x: [0, -50, 0], 
-          y: [0, 40, 0],
-          borderRadius: ["60% 40% 30% 70% / 50% 60% 50% 40%", "40% 60% 70% 30% / 60% 40% 60% 50%", "60% 40% 30% 70% / 50% 60% 50% 40%"]
-        }}
-        transition={{ duration: 25, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <MotionBox
-        position="absolute"
-        top="45%" left="35%" w="35vw" h="35vw" 
-        bg="yellow.200" filter="blur(90px)" opacity={0.5}
-        animate={{ 
-          scale: [1, 1.3, 1],
-          opacity: [0.3, 0.6, 0.3],
-          borderRadius: ["50%", "45% 55% 65% 35% / 55% 45% 55% 45%", "50%"]
-        }}
-        transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
-      />
-    </Box>
-  );
-
   return (
     <>
       <Head>
-        <title>Mathaji 1.0 - The Cute Converter 🎀</title>
+        <title>MATHAJI 1.0 - Professional PDF Engine</title>
       </Head>
-      <Background />
+      <Box position="fixed" top={0} left={0} w="100%" h="100%" zIndex={-1} bg={bgColor} transition="background-color 0.4s ease" />
       
-      <Container maxW="container.md" py={12}>
+      <ThemeSwitcher />
+
+      <Container maxW={{ base: "95%", sm: "container.sm", md: "container.md" }} py={{ base: 8, md: 24 }}>
         <MotionStack
-          initial={{ opacity: 0, scale: 0.8 }}
+          initial={{ opacity: 0, scale: 0.99 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ 
-            type: "spring",
-            damping: 12,
-            stiffness: 100
-          }}
-          spacing={8}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+          spacing={{ base: 8, md: 16 }}
         >
           {/* Main Card */}
           <Box
-            bg="whiteAlpha.900"
-            backdropFilter="blur(15px)"
-            boxShadow="0 30px 60px -20px rgba(255, 105, 180, 0.3)"
-            borderRadius="50px"
-            p={{ base: 6, md: 12 }}
-            border="4px solid"
-            borderColor="pink.100"
+            bg={cardBg}
+            boxShadow={colorMode === "light" ? "0 8px 40px rgba(0,0,0,0.04)" : "none"}
+            borderRadius="24px"
+            border="1px solid"
+            borderColor={cardBorder}
+            p={{ base: 6, md: 16 }}
             position="relative"
             overflow="hidden"
+            transition="all 0.4s ease"
           >
-            {/* Cute Decorative Sparkles */}
-            <Box position="absolute" top="10px" right="20px" fontSize="2xl">✨</Box>
-            <Box position="absolute" bottom="20px" left="20px" fontSize="2xl">🌈</Box>
-
-            <Box mb={8} textAlign="center">
-              <MotionHeading
-                size="3xl"
-                mb={4}
-                bgGradient="linear(to-r, pink.400, purple.500, blue.400)"
-                bgClip="text"
-                fontWeight="900"
-                letterSpacing="tight"
-                animate={{ y: [0, -5, 0] }}
-                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+            {/* Minimalist Header */}
+            <Box mb={{ base: 8, md: 16 }} textAlign="center">
+              <Text 
+                fontSize="xs" 
+                fontWeight="700" 
+                color="#0066CC" 
+                letterSpacing="0.2em" 
+                mb={2}
+                textTransform="uppercase"
               >
-                Mathaji 1.0
+                DOCUMENT ENGINE
+              </Text>
+              <MotionHeading
+                size={{ base: "2xl", md: "3xl" }}
+                mb={4}
+                color={headingColor}
+                fontWeight="700"
+                letterSpacing="-0.03em"
+              >
+                MATHAJI 1.0
               </MotionHeading>
-              <MotionText fontSize="xl" color="gray.600" fontWeight="bold">
-                The magical way to turn your messy numbers into beautiful PDFs! 🦄💎
-              </MotionText>
+              <Text fontSize={{ base: "lg", md: "xl" }} color={subTextColor} fontWeight="500">
+                നിങ്ങളുടെ കണക്കുകൾ ശരിയാക്കാം! 🦄💎
+              </Text>
             </Box>
 
-            <Box as="form" onSubmit={handleSubmit}>
-              <Stack spacing={8}>
+            <Box as="form" onSubmit={handleSubmit} position="relative">
+              <Stack spacing={{ base: 6, md: 10 }}>
                 <Box>
-                  <Text fontWeight="800" mb={3} color="purple.600" fontSize="lg" ml={2}>
-                    What shall we call this gem? 💎
+                  <Text fontWeight="600" mb={3} color={headingColor} fontSize="sm" ml={1}>
+                    REPORT NAME
                   </Text>
                   <Input
                     type="text"
-                    size="lg"
-                    placeholder="e.g. My Super Cool Report 🚀"
+                    h={{ base: "52px", md: "64px" }}
+                    bg={inputBg}
+                    border="1px solid"
+                    borderColor={cardBorder}
+                    borderRadius="14px"
+                    placeholder="e.g. Monthly Vouchers"
                     value={pdfName}
                     onChange={(e) => setPdfName(e.target.value)}
-                    bg="purple.50"
-                    borderRadius="25px"
-                    boxShadow="inner"
-                    border="2px solid"
-                    borderColor="purple.100"
-                    h="65px"
-                    _focus={{ borderColor: "pink.400", bg: "white", boxShadow: "0 0 15px pink" }}
-                    fontWeight="bold"
+                    _focus={{ borderColor: "#0066CC", bg: colorMode === "light" ? "white" : "#3A3A3C", boxShadow: "0 0 0 4px rgba(0, 102, 204, 0.1)" }}
+                    fontSize="md"
+                    fontWeight="500"
+                    color={headingColor}
                   />
                 </Box>
 
                 <Box>
-                  <Text fontWeight="800" mb={3} color="blue.600" fontSize="lg" ml={2}>
-                    Give Mathaji some Excel snackies! 🍪
+                  <Text fontWeight="600" mb={3} color={headingColor} fontSize="sm" ml={1}>
+                    SOURCE FILES
                   </Text>
-                  <Box
-                    as={motion.div}
-                    animate={{ 
-                      scale: isHovering ? 1.05 : 1,
-                      backgroundColor: isHovering ? "#F0F4FF" : "#FFFFFF" 
-                    }}
+                  <MotionBox
+                    layout
+                    whileHover={{ scale: 1.005 }}
                     onClick={() => fileInputRef.current?.click()}
-                    onDragOver={(e) => { e.preventDefault(); setIsHovering(true); }}
+                    onDragOver={(e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setIsHovering(true); }}
                     onDragLeave={() => setIsHovering(false)}
-                    onDrop={(e) => {
+                    onDrop={(e: DragEvent<HTMLDivElement>) => {
                       e.preventDefault();
                       setIsHovering(false);
                       if (e.dataTransfer.files?.length) {
                         setFiles(e.dataTransfer.files);
                       }
                     }}
-                    p={12}
-                    border="4px dashed"
-                    borderColor={isHovering ? "pink.400" : "blue.100"}
-                    borderRadius="40px"
+                    p={{ base: 8, md: 14 }}
+                    border="1px dashed"
+                    borderColor={isHovering ? "#0066CC" : cardBorder}
+                    bg={isHovering ? (colorMode === "light" ? "rgba(0, 102, 204, 0.02)" : "whiteAlpha.50") : dropzoneBg}
+                    borderRadius="20px"
                     textAlign="center"
                     cursor="pointer"
-                    transition="all 0.3s"
-                    boxShadow={isHovering ? "0 20px 40px -10px rgba(255, 105, 180, 0.4)" : "none"}
+                    sx={{ transition: "all 0.2s" }}
                   >
-                    <MotionBox
-                      animate={{ 
-                        rotate: isHovering ? [0, 10, -10, 10, 0] : 0,
-                        scale: isHovering ? 1.2 : 1
-                      }}
-                      transition={{ duration: 0.5 }}
-                    >
-                      <Center mb={4}>
-                        <Box fontSize="5xl">📁</Box>
-                      </Center>
-                    </MotionBox>
-                    <Text fontWeight="900" color="blue.500" fontSize="xl">
-                      {files && files.length > 0 ? `OM NOM! ${files.length} FILE(S)!` : "FEED ME EXCEL!"}
+                    <Box fontSize="4xl" mb={4} opacity={0.6}>📊</Box>
+                    <Text fontWeight="600" color={headingColor} fontSize="lg">
+                      {files && files.length > 0 ? `${files.length} ഫയലുകൾ ചേർത്തു` : "Excel ഫയലുകൾ തിരഞ്ഞെടുക്കുക"}
                     </Text>
-                    <Text color="blue.300" fontSize="md" mt={2} fontWeight="bold">
-                      (Drag them here or click!)
+                    <Text color={subTextColor} fontSize="sm" mt={2} fontWeight="500">
+                      Drag & Drop or Click to Browse
                     </Text>
-                  </Box>
+                  </MotionBox>
                   <Input
                     type="file"
                     accept=".xls,.xlsx"
@@ -311,25 +321,27 @@ export default function Home() {
                 <AnimatePresence>
                   {files && files.length > 0 && (
                     <MotionBox
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 20 }}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
                     >
-                      <List spacing={3}>
+                      <List spacing={2}>
                         {Array.from(files).map((file, idx) => (
                           <ListItem 
                             key={idx} 
-                            p={4} 
-                            bg="pink.50" 
-                            borderRadius="20px" 
+                            p={3} 
+                            bg={colorMode === "light" ? "white" : "whiteAlpha.50"} 
+                            borderRadius="12px" 
                             display="flex" 
                             alignItems="center"
-                            border="2px solid"
-                            borderColor="pink.100"
+                            border="1px solid"
+                            borderColor={cardBorder}
                           >
-                            <Box fontSize="xl" mr={3}>📊</Box>
-                            <Text flex="1" fontWeight="800" color="pink.600" isTruncated>{file.name}</Text>
-                            <Badge colorScheme="pink" borderRadius="full" px={3}>{(file.size / 1024).toFixed(1)} KB</Badge>
+                            <Box fontSize="lg" mr={3}>📄</Box>
+                            <Text flex="1" fontWeight="600" color={headingColor} fontSize="sm" isTruncated>{file.name}</Text>
+                            <Badge variant="subtle" colorScheme="gray" borderRadius="6px" fontSize="xs">
+                              {(file.size / 1024).toFixed(1)} KB
+                            </Badge>
                           </ListItem>
                         ))}
                       </List>
@@ -339,52 +351,92 @@ export default function Home() {
 
                 <Button
                   type="submit"
-                  size="xl"
-                  h="80px"
-                  borderRadius="30px"
-                  bgGradient="linear(to-r, pink.400, purple.500, blue.400)"
+                  h={{ base: "60px", md: "72px" }}
+                  borderRadius="16px"
+                  bg="#0066CC"
                   color="white"
-                  fontWeight="900"
-                  fontSize="2xl"
-                  boxShadow="0 15px 30px -10px rgba(159, 122, 234, 0.6)"
-                  _hover={{ 
-                    bgGradient: "linear(to-r, pink.500, purple.600, blue.500)", 
-                    transform: "scale(1.05) rotate(1deg)",
-                    boxShadow: "0 25px 50px -15px rgba(159, 122, 234, 0.8)" 
-                  }}
-                  _active={{ transform: "scale(0.95)" }}
+                  fontWeight="600"
+                  fontSize="lg"
+                  _hover={{ bg: "#0071E3", transform: "translateY(-1px)" }}
+                  _active={{ bg: "#0055AA", transform: "translateY(0)" }}
                   isLoading={loading}
-                  loadingText={funnyLoadingTexts[loadingTextIndex]}
+                  isDisabled={loading}
                   w="100%"
-                  transition="all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)"
+                  transition="all 0.2s"
                 >
-                  MAGIC GENERATE! ✨
+                  {loading ? "Processing..." : "Generate PDF"}
                 </Button>
               </Stack>
+
+              {/* Minimal Loading Overlay */}
+              <AnimatePresence>
+                {loading && (
+                  <MotionBox
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    position="absolute"
+                    top="-16px"
+                    left="-16px"
+                    right="-16px"
+                    bottom="-16px"
+                    bg={loaderOverlayBg}
+                    borderRadius="24px"
+                    zIndex={10}
+                    display="flex"
+                    flexDirection="column"
+                    alignItems="center"
+                    justifyContent="center"
+                    backdropFilter="blur(5px)"
+                  >
+                    <MotionBox
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                      w="40px"
+                      h="40px"
+                      border="3px solid"
+                      borderColor={cardBorder}
+                      borderTopColor="#0066CC"
+                      borderRadius="full"
+                      mb={6}
+                    />
+                    <AnimatePresence mode="wait">
+                      <MotionBox
+                        key={loadingTextIndex}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.4 }}
+                        textAlign="center"
+                        px={8}
+                      >
+                        <Text fontSize="xl" fontWeight="700" color={headingColor} mb={1}>
+                          {funnyLoadingTexts[loadingTextIndex]}
+                        </Text>
+                        <Text fontSize="sm" color={subTextColor} fontWeight="600">
+                          Please keep this window open
+                        </Text>
+                      </MotionBox>
+                    </AnimatePresence>
+                  </MotionBox>
+                )}
+              </AnimatePresence>
             </Box>
           </Box>
 
-          <Center mt={8}>
-            <MotionText
-              fontWeight="bold"
-              color="gray.400"
-              animate={{ opacity: [0.4, 0.8, 0.4] }}
-              transition={{ duration: 4, repeat: Infinity }}
-            >
-              Mathaji is watching over your documents... 🙏✨
-            </MotionText>
+          <Center>
+            <Text fontSize="xs" fontWeight="600" color={subTextColor} letterSpacing="0.05em">
+              BUILT FOR PRECISION & SPEED
+            </Text>
           </Center>
-
         </MotionStack>
       </Container>
 
       <style jsx global>{`
         body {
-          cursor: url('https://raw.githubusercontent.com/half-done/cursors/master/cute-pink/pointer.cur'), auto;
-        }
-        ::selection {
-          background: #FFB6C1;
-          color: white;
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
+          transition: background-color 0.4s ease;
         }
       `}</style>
     </>
