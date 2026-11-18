@@ -2,6 +2,8 @@ node_modules
 .next
 out
 .env
+.env.*
+!.env.example
 .DS_Store
 *.pdf
 *.xlsx
@@ -9,4 +11,4 @@ out
 *.err
 tmp_*
 tsconfig.tsbuildinfo
-package-lock.json (if you prefer, but usually next projects keep it)
+
