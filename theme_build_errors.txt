@@ -1,1 +1,0 @@
-pages/index.tsx(301,21): error TS2322: Type 'string' is not assignable to type 'Transition | undefined'.
