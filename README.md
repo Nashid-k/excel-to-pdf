@@ -1,62 +1,63 @@
-<!-- ══════════════════════════════════════════════════════════════════ -->
-<!--                     NASHID K  —  PROJECT METRICS                   -->
-<!-- ══════════════════════════════════════════════════════════════════ -->
+# Excel to PDF — AI-Assisted Spreadsheet Export
 
-# 🚀 excel-to-pdf
+A Next.js application that accepts Excel workbooks and generates formatted PDF documents. It uses SheetJS to inspect workbook data, PDFKit to create PDFs, and an optional Groq integration to help classify and lay out spreadsheet content. A deterministic fallback path is available when the AI service is not configured.
 
-<p align="center">
-  ![](https://img.shields.io/badge/React-18.x-61DAFB?style=flat-square&logo=react) ![](https://img.shields.io/badge/Next.js-14.x-black?style=flat-square&logo=nextdotjs) ![](https://img.shields.io/badge/TypeScript-5.x-blue?style=flat-square&logo=typescript) 
-</p>
+## Features
 
-<p align="center">
-  <strong>A modern web application built with TypeScript.</strong>
-</p>
+- Upload one or more `.xls` or `.xlsx` workbooks
+- Inspect worksheets, ranges, rows, columns and merged cells
+- Select and classify sheets for PDF output
+- Generate formatted PDFs with PDFKit
+- Optional Groq-assisted layout analysis with a fallback mode
+- Light and dark interface themes
+- Drag-and-drop upload interface
 
----
+## Stack
 
-## 📌 Project Overview
-This repository contains **excel-to-pdf**, engineered with modern design standards, modular structures, and clean coding architectures.
+- Next.js 14 (Pages Router)
+- React 18 and TypeScript
+- Chakra UI
+- SheetJS (`xlsx`)
+- PDFKit
+- Formidable for multipart uploads
+- Groq SDK (optional)
 
-### ✨ Core Features
-*   **Responsive Design:** Optimized layout for mobile, tablet, and desktop views.
-*   **Clean Codebase:** Highly organized module structures for easy navigation.
+## Requirements
 
----
+- Node.js 20+
+- npm
+- Groq API key only if you want AI-assisted analysis; fallback processing is implemented for requests without a key
 
-## 📂 Project Architecture
+## Run locally
 
-```text
-├── index.html    # Home entry point
-├── style.css     # Modular styling
-└── script.js     # Interaction logic
+```bash
+git clone https://github.com/Nashid-k/excel-to-pdf.git
+cd excel-to-pdf
+npm install
+cp .env.example .env.local
+npm run dev
 ```
 
----
+Open [http://localhost:3000](http://localhost:3000).
 
-## ⚙️ Local Development Setup
+## Environment
 
-1. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/Nashid-k/excel-to-pdf.git
-   cd excel-to-pdf
-   ```
+| Variable | Purpose |
+| --- | --- |
+| `GROQ_API_KEY` | Optional API key for AI-assisted workbook analysis |
 
-2. **Install Dependencies:**
-   ```bash
-   npm install
-   ```
+Do not expose provider keys in client-side code or commit local environment files.
 
-3. **Configure Environment:**
-   *(If applicable, copy the `.env.example` file to `.env` and fill in variables)*
+## API
 
-4. **Start local dev server:**
-   ```bash
-   npm run dev
-   ```
+The conversion endpoint is implemented as a Next.js API route at `/api/convert`. It parses multipart form uploads and has a 200 MB per-file parser limit. Keep deployment request-size limits, execution timeouts and storage constraints in mind; the application should be load-tested before handling large or sensitive workbooks in production.
 
----
+## Scripts
 
-## 🛡️ Security & Best Practices Implemented
-*   **Strict Separations:** Modular separation between config, logic, and view components.
-*   **Environment Configuration:** Secure variables kept out of repository scopes via dotenv.
-*   **Git Standards:** Maintained clean histories and semantic commit protocols.
+- `npm run dev` — start the development server
+- `npm run build` — create the production build
+- `npm start` — start the production server
+
+## Security and data handling
+
+Uploaded workbooks may contain personal or financial information. Validate uploads, avoid logging workbook contents, restrict upload size at the hosting layer, and define a retention policy for temporary files. The optional Groq integration sends selected workbook summaries to the configured provider; review that data flow before processing confidential documents.
