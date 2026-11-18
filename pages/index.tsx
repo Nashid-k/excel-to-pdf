@@ -298,7 +298,7 @@ export default function Home() {
                     borderRadius="20px"
                     textAlign="center"
                     cursor="pointer"
-                    sx={{ transition: "all 0.2s" }}
+                    style={{ transition: "all 0.2s" }}
                   >
                     <Box fontSize="4xl" mb={4} opacity={0.6}>📊</Box>
                     <Text fontWeight="600" color={headingColor} fontSize="lg">
